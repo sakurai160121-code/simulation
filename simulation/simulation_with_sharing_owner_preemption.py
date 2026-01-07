@@ -22,6 +22,7 @@ from config import (
     TASK_SIZE_MEAN,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
+    INTERRUPTION_OVERHEAD_FACTOR,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -114,8 +115,10 @@ class SimulatorWithOwnerPreemption:
         lam = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
         mean_owner_size = TASK_SIZE_MEANS.get(str(owner_id), TASK_SIZE_MEAN)
         mean_owner_service = mean_owner_size / gpu.processing_rate
-        p_interrupt = 1.0 - np.exp(-lam * service_time)
-        penalty = p_interrupt * mean_owner_service
+        # 期待割込み回数（Poissonの期待値）：lam * service_time を用いる強化版
+        expected_interruptions = lam * service_time
+        # 追加の再開・マイグレーションオーバーヘッドを係数で加味（強めに設定）
+        penalty = expected_interruptions * (mean_owner_service * (1.0 + INTERRUPTION_OVERHEAD_FACTOR))
         return penalty
 
     # ---------------------- GPU選択ロジック ----------------------
@@ -153,7 +156,9 @@ class SimulatorWithOwnerPreemption:
 
         # 2) プリエンプト元GPUで先頭待機（所有者待ち）
         wait_owner = self.predict_owner_wait_on_gpu(preempt_gpu, self.gpu_owner[preempt_gpu.gpu_id])
-        t_wait_here = self.current_time + wait_owner + task.remaining_work / preempt_gpu.processing_rate
+        # ゲストはμ_effで処理されるためサービス率を実効値に
+        mu_eff_here = self.get_effective_processing_rate(preempt_gpu, task.user_id)
+        t_wait_here = self.current_time + wait_owner + task.remaining_work / mu_eff_here
 
         # 3) 他GPUのキュー末尾（期待ペナルティ込み）から最良を探す
         best_other_time = float('inf')
@@ -189,7 +194,9 @@ class SimulatorWithOwnerPreemption:
             # ゲストをプリエンプト
             guest = gpu.current_task
             elapsed = max(0.0, self.current_time - (guest.start_time or self.current_time))
-            processed_work = elapsed * gpu.processing_rate
+            # 実際に用いている処理率（ゲストはμ_eff）で処理量を算出
+            rate_used = self.get_effective_processing_rate(gpu, guest.user_id)
+            processed_work = elapsed * rate_used
             # 初回実行時に残作業が未設定なら設定
             if getattr(guest, 'remaining_work', None) is None:
                 # 到着時刻でサイズ取得（初回開始時に設定される想定）
@@ -203,12 +210,15 @@ class SimulatorWithOwnerPreemption:
             best_time, choice, dest_gpu = self.select_after_preempt(guest, gpu)
             if choice == 'own':
                 dest_gpu.add_task(guest, owner_id=guest.user_id)
+                guest.assigned_gpu = dest_gpu
                 if dest_gpu.current_task is None:
                     self.start_task_on_gpu(dest_gpu, guest)
             elif choice == 'wait_here':
                 gpu.task_queue.insert(0, guest)  # 先頭で待機
+                guest.assigned_gpu = gpu
             else:  # other
                 dest_gpu.add_task(guest)  # 末尾
+                guest.assigned_gpu = dest_gpu
                 if dest_gpu.current_task is None:
                     self.start_task_on_gpu(dest_gpu, guest)
 
