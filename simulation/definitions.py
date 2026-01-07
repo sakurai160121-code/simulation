@@ -14,9 +14,17 @@ class GPU:
         self.current_task = None  # 現在処理中のタスク
         self.finish_time = 0  # 現在のタスク完了予定時刻
         
-    def add_task(self, task):
-        """タスクをキューに追加"""
-        self.task_queue.append(task)
+    def add_task(self, task, owner_id=None):
+        """
+        タスクをキューに追加
+        owner_id が指定されている場合、所有者のタスクを優先
+        """
+        if owner_id is not None and task.user_id == owner_id:
+            # 所有者のタスク：キューの先頭に挿入（割り込み）
+            self.task_queue.insert(0, task)
+        else:
+            # 他人のタスク：末尾に追加
+            self.task_queue.append(task)
         
     def get_queue_length(self):
         """現在のキュー長（処理中のタスクも含む）"""

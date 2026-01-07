@@ -86,7 +86,12 @@ class ResultAnalyzer:
         """システム全体の結果を表示"""
         stats = self.get_system_statistics()
         
-        mode_title = "【共有なしシミュレーション】" if self.mode == "no_sharing" else "【共有ありシミュレーション（ACPプール）】"
+        if self.mode == "no_sharing":
+            mode_title = "【共有なしシミュレーション】"
+        elif self.mode == "with_sharing":
+            mode_title = "【共有ありシミュレーション】"
+        else:
+            mode_title = "【共有あり・所有者優先度シミュレーション】"
         
         print("=" * 80)
         print(mode_title)
@@ -100,9 +105,39 @@ class ResultAnalyzer:
         print(f"平均待ち時間：{stats['avg_waiting_time']:.4f}")
         print()
     
+    def get_gpu_selection_stats(self):
+        """ユーザーごとのGPU選択パターンを計算"""
+        gpu_selection_stats = []
+        
+        for user_id in range(self.num_users):
+            user_tasks = [t for t in self.tasks if t.user_id == user_id and t.assigned_gpu is not None]
+            
+            owner_count = 0
+            other_count = 0
+            
+            for task in user_tasks:
+                if task.assigned_gpu.gpu_id == user_id:
+                    owner_count += 1
+                else:
+                    other_count += 1
+            
+            total = owner_count + other_count
+            owner_rate = owner_count / total * 100 if total > 0 else 0
+            
+            gpu_selection_stats.append({
+                "user_id": user_id,
+                "owner_count": owner_count,
+                "other_count": other_count,
+                "owner_rate": owner_rate,
+                "other_rate": 100 - owner_rate,
+            })
+        
+        return gpu_selection_stats
+    
     def print_user_results(self):
         """ユーザー別の結果を表示"""
         user_stats = self.get_user_statistics()
+        gpu_stats = self.get_gpu_selection_stats()
         
         print("=" * 140)
         print("【ユーザー別の統計情報】")
@@ -114,6 +149,21 @@ class ResultAnalyzer:
         df_display.columns = ["ユーザーID", "性能ティア", "処理レート", "発生タスク数", "完了タスク数", "完了率(%)", "待ち時間合計", "平均待ち時間"]
         
         print(df_display.to_string(index=False))
+        print()
+        
+        # GPU選択パターンを表示
+        print("=" * 140)
+        print("【GPU選択パターン（共有モード時のみ有意）】")
+        print("=" * 140)
+        gpu_df = pd.DataFrame(gpu_stats)
+        gpu_display = gpu_df.copy()
+        gpu_display.columns = ["ユーザーID", "自分のGPU", "他人のGPU", "自分のGPU(%)", "他人のGPU(%)"]
+        gpu_display["自分のGPU"] = gpu_display["自分のGPU"].astype(int)
+        gpu_display["他人のGPU"] = gpu_display["他人のGPU"].astype(int)
+        gpu_display["自分のGPU(%)"] = gpu_display["自分のGPU(%)"].apply(lambda x: f"{x:.1f}%")
+        gpu_display["他人のGPU(%)"] = gpu_display["他人のGPU(%)"].apply(lambda x: f"{x:.1f}%")
+        
+        print(gpu_display.to_string(index=False))
         print()
         
         # ティア別サマリー
@@ -144,7 +194,12 @@ class ResultAnalyzer:
         user_stats = self.get_user_statistics()
         df = pd.DataFrame(user_stats)
         
-        mode_title = "共有なし" if self.mode == "no_sharing" else "共有あり（ACPプール）"
+        if self.mode == "no_sharing":
+            mode_title = "共有なし"
+        elif self.mode == "with_sharing":
+            mode_title = "共有あり"
+        else:
+            mode_title = "共有あり・所有者優先度"
         
         # 3つのサブプロットを作成
         fig, axes = plt.subplots(1, 3, figsize=(18, 5))
