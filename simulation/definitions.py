@@ -45,6 +45,8 @@ class Task:
         self.start_time = None  # 処理開始時刻
         self.completion_time = None  # 完了時刻
         self.assigned_gpu = None  # 割り当てられたGPU
+        # 共有・プリエンプトシナリオ用：残作業量（タスクサイズ）。開始時に設定、プリエンプトで更新
+        self.remaining_work = None
         
     def get_waiting_time(self):
         """待ち時間 = 開始時刻 - 発生時刻"""
