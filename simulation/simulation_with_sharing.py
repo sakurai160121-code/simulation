@@ -7,7 +7,18 @@
 import numpy as np
 import heapq
 from definitions import User, GPU, Task
-from config import NUM_USERS, ARRIVAL_RATE, SIMULATION_TIME, RANDOM_SEED, GPU_PERFORMANCE_LEVELS, GPU_TIER_ASSIGNMENT
+from config import (
+    NUM_USERS,
+    ARRIVAL_RATE,
+    ARRIVAL_RATES,
+    SIMULATION_TIME,
+    RANDOM_SEED,
+    GPU_PERFORMANCE_LEVELS,
+    GPU_TIER_ASSIGNMENT,
+    TASK_SIZE_MEAN,
+    TASK_SIZE_MEANS,
+    TASK_SIZE_MEAN_GLOBAL,
+)
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
 import os
@@ -39,11 +50,11 @@ class SimulatorWithSharing:
                     tier = tier_name
                     break
             
-            # 性能ティアに対応する処理時間の平均を取得
-            mean_processing_time = GPU_PERFORMANCE_LEVELS[tier]
+            # 性能ティアに対応する処理レートを取得
+            processing_rate = GPU_PERFORMANCE_LEVELS[tier]
             
             # GPU を共有プールに追加
-            gpu = GPU(gpu_id=user_id, processing_time=mean_processing_time)
+            gpu = GPU(gpu_id=user_id, processing_rate=processing_rate)
             self.shared_gpus.append(gpu)
         
         # ユーザー作成（GPUは割り当てない、共有プールを使う）
@@ -71,20 +82,21 @@ class SimulatorWithSharing:
         # 現在のタスクが完了する時刻
         completion_time = gpu.finish_time if gpu.current_task is not None else self.current_time
         
-        # キュー内のタスクの平均処理時間 × タスク数で概算
-        # （厳密な計算は避けて高速化）
+        # キュー内のタスクを「平均タスクサイズ / 処理レート × キュー長」で概算
         queue_length = len(gpu.task_queue)
         if queue_length > 0:
-            # GPU性能の平均処理時間を使用
-            completion_time += gpu.processing_time * queue_length
+            completion_time += (TASK_SIZE_MEAN_GLOBAL / gpu.processing_rate) * queue_length
         
         return completion_time
     
     def get_service_time(self, gpu, task):
-        """タスクの処理時間をパターンから取得"""
-        service_times = self.task_patterns.get("service_times", {}).get(str(task.user_id), {})
-        service_time = service_times.get(str(task.arrival_time), np.random.exponential(gpu.processing_time))
-        return service_time
+        """タスクサイズを取得し、GPU処理レートでサービス時間を計算"""
+        job_sizes = self.task_patterns.get("job_sizes", {}).get(str(task.user_id), {})
+        job_size = job_sizes.get(str(task.arrival_time))
+        if job_size is None:
+            user_mean = TASK_SIZE_MEANS.get(str(task.user_id), TASK_SIZE_MEAN)
+            job_size = np.random.exponential(user_mean)
+        return job_size / gpu.processing_rate
     
     def select_best_gpu(self):
         """

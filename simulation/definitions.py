@@ -7,9 +7,9 @@ class GPU:
     GPU クラス
     各ユーザーが1台所有
     """
-    def __init__(self, gpu_id, processing_time=1.0):
+    def __init__(self, gpu_id, processing_rate=1.0):
         self.gpu_id = gpu_id
-        self.processing_time = processing_time  # 1タスク当たりの処理時間
+        self.processing_rate = processing_rate  # 単位タスクサイズあたりの処理レート（大きいほど速い）
         self.task_queue = []  # キューイング中のタスク
         self.current_task = None  # 現在処理中のタスク
         self.finish_time = 0  # 現在のタスク完了予定時刻

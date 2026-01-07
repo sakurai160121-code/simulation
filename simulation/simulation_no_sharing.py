@@ -6,7 +6,17 @@
 import numpy as np
 import heapq
 from definitions import User, GPU, Task
-from config import NUM_USERS, ARRIVAL_RATE, SIMULATION_TIME, RANDOM_SEED, GPU_PERFORMANCE_LEVELS, GPU_TIER_ASSIGNMENT
+from config import (
+    NUM_USERS,
+    ARRIVAL_RATE,
+    ARRIVAL_RATES,
+    SIMULATION_TIME,
+    RANDOM_SEED,
+    GPU_PERFORMANCE_LEVELS,
+    GPU_TIER_ASSIGNMENT,
+    TASK_SIZE_MEAN,
+    TASK_SIZE_MEANS,
+)
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
 import os
@@ -35,17 +45,22 @@ class Simulator:
                     tier = tier_name
                     break
             
-            # 性能ティアに対応する処理時間の平均を取得
-            mean_processing_time = GPU_PERFORMANCE_LEVELS[tier]
-            
+            # 性能ティアに対応する処理レートを取得
+            processing_rate = GPU_PERFORMANCE_LEVELS[tier]
+            arrival_rate = ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
+
             # GPU と User を作成
-            gpu = GPU(gpu_id=user_id, processing_time=mean_processing_time)
-            user = User(user_id=user_id, gpu=gpu, arrival_rate=ARRIVAL_RATE)
+            gpu = GPU(gpu_id=user_id, processing_rate=processing_rate)
+            user = User(user_id=user_id, gpu=gpu, arrival_rate=arrival_rate)
             self.users.append(user)
             
             # 最初のタスク発生イベントをスケジュール
-            first_arrival = np.random.exponential(1.0 / ARRIVAL_RATE)
-            self.schedule_event(first_arrival, "task_arrival", user_id)
+            arrivals = self.task_patterns.get("arrivals", {}).get(str(user_id), [])
+            if arrivals:
+                self.schedule_event(arrivals[0], "task_arrival", user_id)
+            else:
+                first_arrival = np.random.exponential(1.0 / arrival_rate)
+                self.schedule_event(first_arrival, "task_arrival", user_id)
     
     def schedule_event(self, time, event_type, data):
         """イベントをスケジュール"""
@@ -79,9 +94,14 @@ class Simulator:
         task.start_time = self.current_time
         gpu.current_task = task
         
-        # 処理時間をパターンから取得
-        service_times = self.task_patterns.get("service_times", {}).get(str(gpu.gpu_id), {})
-        service_time = service_times.get(str(task.arrival_time), np.random.exponential(gpu.processing_time))
+        # タスクサイズをパターンから取得し、サービス時間を算出
+        job_sizes = self.task_patterns.get("job_sizes", {}).get(str(task.user_id), {})
+        job_size = job_sizes.get(str(task.arrival_time))
+        if job_size is None:
+            user_mean = TASK_SIZE_MEANS.get(str(task.user_id), TASK_SIZE_MEAN)
+            job_size = np.random.exponential(user_mean)
+
+        service_time = job_size / gpu.processing_rate
         
         finish_time = self.current_time + service_time
         gpu.finish_time = finish_time
