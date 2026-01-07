@@ -200,6 +200,10 @@ class SimulatorWithOwnerPriority:
     
     def start_task_on_gpu(self, gpu, task):
         """GPUでタスクを開始"""
+        # 安全チェック：GPUが空いていることを確認
+        if gpu.current_task is not None:
+            raise RuntimeError(f"GPU {gpu.gpu_id} already has a running task {gpu.current_task.task_id}")
+        
         task.start_time = self.current_time
         gpu.current_task = task
         
@@ -216,11 +220,13 @@ class SimulatorWithOwnerPriority:
         finish_time = self.current_time + service_time
         gpu.finish_time = finish_time
         
-        # タスク完了イベントをスケジュール
-        self.schedule_event(finish_time, "gpu_finish", gpu.gpu_id)
+        # タスク完了イベントをスケジュール（タスクIDも含める）
+        self.schedule_event(finish_time, "gpu_finish", (gpu.gpu_id, task.task_id))
     
-    def process_gpu_finish(self, gpu_id):
+    def process_gpu_finish(self, data):
         """GPU処理完了イベント処理"""
+        # dataは(gpu_id, task_id)のタプル
+        gpu_id, expected_task_id = data
         # GPU IDで対応するGPUを探す
         gpu = None
         for g in self.shared_gpus:
@@ -233,6 +239,13 @@ class SimulatorWithOwnerPriority:
         
         # 現在のタスクを完了
         task = gpu.current_task
+        if task is None:
+            return
+        
+        # タスクIDが一致しない場合は古いイベントなので無視
+        if task.task_id != expected_task_id:
+            return
+        
         task.completion_time = self.current_time
         gpu.current_task = None
         
