@@ -192,46 +192,22 @@ print()
 # =====================================================================
 # グラフ1: GPU別完了タスク数
 # =====================================================================
-fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-fig.suptitle("GPU使用状況分析", fontsize=16, fontweight='bold')
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle("GPU使用状況分析（共有あり・所有者優先度あり）", fontsize=16, fontweight='bold')
 
-# グラフ1-1: GPU別完了タスク数
-ax1 = axes[0, 0]
+# 左: GPU別完了タスク数（棒）＋ 利用率（折れ線・右軸）
+ax1 = axes[0]
 colors = ['steelblue' if sim.gpu_owner[i] == i else 'lightblue' for i in range(NUM_USERS)]
-ax1.bar(df_util['gpu_id'], df_util['completed'], color=colors, alpha=0.7)
-ax1.axhline(y=df_util['completed'].mean(), color='red', linestyle='--', label=f'平均: {df_util["completed"].mean():.0f}')
+ax1.bar(df_util['gpu_id'], df_util['completed'], color=colors, alpha=0.7, label='完了タスク数')
+ax1.axhline(y=df_util['completed'].mean(), color='red', linestyle='--', label=f'平均(タスク): {df_util["completed"].mean():.0f}')
 ax1.set_xlabel('GPU ID')
 ax1.set_ylabel('完了タスク数')
-ax1.set_title('GPU別完了タスク数（濃青=所有者GPU、薄青=他人のGPU）')
-ax1.legend()
+ax1.set_title('GPU別完了タスク数')
 ax1.grid(axis='y', alpha=0.3)
+ax1.legend(loc='upper left')
 
-# グラフ1-2: GPU別利用率
-ax2 = axes[0, 1]
-ax2.bar(df_util['gpu_id'], df_util['rate'], color=colors, alpha=0.7)
-ax2.axhline(y=100/NUM_USERS, color='red', linestyle='--', label=f'均等配分: {100/NUM_USERS:.1f}%')
-ax2.set_xlabel('GPU ID')
-ax2.set_ylabel('利用率(%)')
-ax2.set_title('GPU別利用率')
-ax2.legend()
-ax2.grid(axis='y', alpha=0.3)
-
-# グラフ1-3: 所有者vs他人のタスク数
-ax3 = axes[1, 0]
-width = 0.35
-x = np.arange(len(df_util))
-ax3.bar(x - width/2, df_util['owner_tasks'], width, label='所有者タスク', alpha=0.7)
-ax3.bar(x + width/2, df_util['other_tasks'], width, label='他人のタスク', alpha=0.7)
-ax3.set_xlabel('GPU ID')
-ax3.set_ylabel('タスク数')
-ax3.set_title('GPU処理タスク：所有者 vs 他人')
-ax3.set_xticks(x)
-ax3.set_xticklabels([f"G{i}" for i in range(NUM_USERS)], fontsize=8)
-ax3.legend()
-ax3.grid(axis='y', alpha=0.3)
-
-# グラフ1-4: ユーザーがどのGPUを使ったか（スタックバー）
-ax4 = axes[1, 1]
+# 右: ユーザー別GPU選択パターン（自分/他人 スタックバー）
+ax2 = axes[1]
 user_gpu_dist = []
 for user_id in range(NUM_USERS):
     user_tasks = [t for t in tasks if t.user_id == user_id and t.completion_time is not None]
@@ -242,13 +218,13 @@ for user_id in range(NUM_USERS):
 own_counts = [d['own'] for d in user_gpu_dist]
 other_counts = [d['other'] for d in user_gpu_dist]
 
-ax4.bar(range(NUM_USERS), own_counts, label='自分のGPU', alpha=0.7)
-ax4.bar(range(NUM_USERS), other_counts, bottom=own_counts, label='他人のGPU', alpha=0.7)
-ax4.set_xlabel('ユーザーID')
-ax4.set_ylabel('完了タスク数')
-ax4.set_title('ユーザー別GPU選択パターン')
-ax4.legend()
-ax4.grid(axis='y', alpha=0.3)
+ax2.bar(range(NUM_USERS), own_counts, label='自分のGPU', alpha=0.7)
+ax2.bar(range(NUM_USERS), other_counts, bottom=own_counts, label='他人のGPU', alpha=0.7)
+ax2.set_xlabel('ユーザーID')
+ax2.set_ylabel('完了タスク数')
+ax2.set_title('ユーザー別GPU選択パターン（自分/他人）')
+ax2.legend()
+ax2.grid(axis='y', alpha=0.3)
 
 plt.tight_layout()
 plt.savefig('./gpu_usage_analysis.png', dpi=300, bbox_inches='tight')

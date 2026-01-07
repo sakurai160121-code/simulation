@@ -171,10 +171,14 @@ class SimulatorWithOwnerPreemption:
         return min(choices, key=lambda x: x[0])
 
     # ---------------------- 実行・プリエンプト ----------------------
-    def start_task_on_gpu(self, gpu, task, use_effective=False):
+    def start_task_on_gpu(self, gpu, task):
         task.start_time = self.current_time
         gpu.current_task = task
-        rate = self.get_effective_processing_rate(gpu, task.user_id) if use_effective else gpu.processing_rate
+        # 所有者以外は実効レートを適用して遅延を反映
+        if self.gpu_owner[gpu.gpu_id] == task.user_id:
+            rate = gpu.processing_rate
+        else:
+            rate = self.get_effective_processing_rate(gpu, task.user_id)
         service_time = task.remaining_work / rate
         finish_time = self.current_time + service_time
         gpu.finish_time = finish_time
