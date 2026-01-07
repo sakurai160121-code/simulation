@@ -23,6 +23,7 @@ from config import (
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
     INTERRUPTION_OVERHEAD_FACTOR,
+    DEADLINE_FACTOR,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -228,6 +229,16 @@ class SimulatorWithOwnerPreemption:
         task = user.create_task(self.current_time)
         # タスクサイズ→残作業として保持
         task.remaining_work = self.compute_job_size(user_id, task.arrival_time)
+        # 締切（ユーザー自身のティア処理レートを基準にしたサービス時間×係数）
+        # ユーザーのティアを取得
+        tier = None
+        for tier_name, user_list in GPU_TIER_ASSIGNMENT.items():
+            if user_id in user_list:
+                tier = tier_name
+                break
+        owner_rate = GPU_PERFORMANCE_LEVELS[tier] if tier is not None else 1.0
+        base_service_time = task.remaining_work / owner_rate
+        task.deadline = task.arrival_time + DEADLINE_FACTOR * base_service_time
         self.all_tasks.append(task)
 
         # 最適GPU選択（他GPUは中断リスク期待値込み）
@@ -265,7 +276,12 @@ class SimulatorWithOwnerPreemption:
         task = gpu.current_task
         if task is None:
             return
-        task.completion_time = self.current_time
+        # 締切チェック：期限を過ぎていれば失敗扱いとしてcompletion_timeを設定しない
+        if task.deadline is not None and self.current_time > task.deadline:
+            task.failed = True
+            task.completion_time = None
+        else:
+            task.completion_time = self.current_time
         task.remaining_work = 0.0
         gpu.current_task = None
 
