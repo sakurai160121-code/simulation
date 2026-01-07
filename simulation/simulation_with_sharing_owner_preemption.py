@@ -183,6 +183,10 @@ class SimulatorWithOwnerPreemption:
 
     # ---------------------- 実行・プリエンプト ----------------------
     def start_task_on_gpu(self, gpu, task):
+        # 安全チェック：GPUが空いていることを確認
+        if gpu.current_task is not None:
+            raise RuntimeError(f"GPU {gpu.gpu_id} already has a running task {gpu.current_task.task_id}")
+        
         task.start_time = self.current_time
         gpu.current_task = task
         # 所有者以外は実効レートを適用して遅延を反映
@@ -193,7 +197,8 @@ class SimulatorWithOwnerPreemption:
         service_time = task.remaining_work / rate
         finish_time = self.current_time + service_time
         gpu.finish_time = finish_time
-        self.schedule_event(finish_time, "gpu_finish", gpu.gpu_id)
+        # イベントデータにGPU IDとタスクIDを含める
+        self.schedule_event(finish_time, "gpu_finish", (gpu.gpu_id, task.task_id))
 
     def preempt_guest_if_needed(self, gpu, owner_id):
         if gpu.current_task is not None and gpu.current_task.user_id != owner_id:
@@ -273,7 +278,9 @@ class SimulatorWithOwnerPreemption:
             if next_t <= SIMULATION_TIME:
                 self.schedule_event(next_t, "task_arrival", user_id)
 
-    def process_gpu_finish(self, gpu_id):
+    def process_gpu_finish(self, data):
+        # dataは(gpu_id, task_id)のタプル
+        gpu_id, expected_task_id = data
         gpu = None
         for g in self.shared_gpus:
             if g.gpu_id == gpu_id:
@@ -284,6 +291,10 @@ class SimulatorWithOwnerPreemption:
 
         task = gpu.current_task
         if task is None:
+            return
+        
+        # タスクIDが一致しない場合は古いイベント（プリエンプトされた）なので無視
+        if task.task_id != expected_task_id:
             return
         # 締切チェック：期限を過ぎていれば失敗扱いとしてcompletion_timeを設定しない
         if task.deadline is not None and self.current_time > task.deadline:

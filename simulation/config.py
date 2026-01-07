@@ -49,4 +49,4 @@ INTERRUPTION_OVERHEAD_FACTOR = 2.0
 
 # タスク締切の係数（基準サービス時間×係数）
 # 例: DEADLINE_FACTOR=3.0 なら、基準サービス時間の3倍までに完了できないタスクは失敗扱い
-DEADLINE_FACTOR = 3.0
+DEADLINE_FACTOR = 10.0
