@@ -44,6 +44,11 @@ class SimulatorWithOwnerPreemption:
         self.current_time = 0.0
         self.all_tasks = []
         self.task_patterns = task_patterns or {}
+        # デバッグ用カウンタ
+        self.preemption_count = 0
+        self.realloc_own = 0
+        self.realloc_wait_here = 0
+        self.realloc_other = 0
 
     # ---------------------- 基本セットアップ ----------------------
     def initialize(self):
@@ -193,6 +198,7 @@ class SimulatorWithOwnerPreemption:
     def preempt_guest_if_needed(self, gpu, owner_id):
         if gpu.current_task is not None and gpu.current_task.user_id != owner_id:
             # ゲストをプリエンプト
+            self.preemption_count += 1
             guest = gpu.current_task
             elapsed = max(0.0, self.current_time - (guest.start_time or self.current_time))
             # 実際に用いている処理率（ゲストはμ_eff）で処理量を算出
@@ -210,14 +216,17 @@ class SimulatorWithOwnerPreemption:
             # ゲストの次の行き先を決める
             best_time, choice, dest_gpu = self.select_after_preempt(guest, gpu)
             if choice == 'own':
+                self.realloc_own += 1
                 dest_gpu.add_task(guest, owner_id=guest.user_id)
                 guest.assigned_gpu = dest_gpu
                 if dest_gpu.current_task is None:
                     self.start_task_on_gpu(dest_gpu, guest)
             elif choice == 'wait_here':
+                self.realloc_wait_here += 1
                 gpu.task_queue.insert(0, guest)  # 先頭で待機
                 guest.assigned_gpu = gpu
             else:  # other
+                self.realloc_other += 1
                 dest_gpu.add_task(guest)  # 末尾
                 guest.assigned_gpu = dest_gpu
                 if dest_gpu.current_task is None:
@@ -280,9 +289,11 @@ class SimulatorWithOwnerPreemption:
         if task.deadline is not None and self.current_time > task.deadline:
             task.failed = True
             task.completion_time = None
+            # 失敗タスクはremaining_workを維持（デバッグ用）
         else:
             task.completion_time = self.current_time
-        task.remaining_work = 0.0
+            # 正常完了のみremaining_workを0に
+            task.remaining_work = 0.0
         gpu.current_task = None
 
         # 次があれば開始
@@ -301,8 +312,21 @@ class SimulatorWithOwnerPreemption:
             elif event_type == "gpu_finish":
                 self.process_gpu_finish(data)
 
+        # シミュレーション終了時：キューに残っているタスクと実行中タスクを失敗扱い
+        for gpu in self.shared_gpus:
+            if gpu.current_task is not None:
+                gpu.current_task.failed = True
+            for t in gpu.task_queue:
+                t.failed = True
+
         print(f"シミュレーション終了：時刻 {self.current_time}")
         print(f"発生したタスク総数：{len(self.all_tasks)}")
+        print(f"\n[プリエンプト統計]")
+        print(f"プリエンプト発生回数：{self.preemption_count}")
+        print(f"再割当：自分GPU={self.realloc_own}, 元GPU待ち={self.realloc_wait_here}, 他GPU={self.realloc_other}")
+        deadline_failures = sum(1 for t in self.all_tasks if t.failed and t.deadline is not None and t.completion_time is None)
+        timeout_in_queue = sum(1 for t in self.all_tasks if t.failed and t.start_time is None)
+        print(f"締切違反：{deadline_failures}件, キューでタイムアウト：{timeout_in_queue}件")
         return self.all_tasks
 
 
