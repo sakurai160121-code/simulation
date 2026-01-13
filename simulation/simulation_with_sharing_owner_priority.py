@@ -15,9 +15,9 @@ from config import (
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEAN,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
+    BATCH_MULTIPLIER,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -84,7 +84,7 @@ class SimulatorWithOwnerPriority:
         """
         owner_id = self.gpu_owner[gpu.gpu_id]
         owner_lambda = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        owner_task_size_mean = TASK_SIZE_MEANS.get(str(owner_id), TASK_SIZE_MEAN)
+        owner_task_size_mean = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL)
         
         utilization = owner_lambda * owner_task_size_mean / gpu.processing_rate
         return utilization
@@ -122,13 +122,9 @@ class SimulatorWithOwnerPriority:
         user_queue_time = 0
         for task in gpu.task_queue:
             if task.user_id == user_id:
-                # 自分のタスクのサービス時間
-                job_sizes = self.task_patterns.get("job_sizes", {}).get(str(task.user_id), {})
-                job_size = job_sizes.get(str(task.arrival_time))
-                if job_size is None:
-                    user_mean = TASK_SIZE_MEANS.get(str(task.user_id), TASK_SIZE_MEAN)
-                    job_size = np.random.exponential(user_mean)
-                user_queue_time += job_size / gpu.processing_rate
+                # 自分のタスクのサービス時間（バッチ係数適用）
+                task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+                user_queue_time += task_size_mean / gpu.processing_rate
         
         return self.current_time + current_remaining + user_queue_time
     
@@ -142,10 +138,11 @@ class SimulatorWithOwnerPriority:
         
         completion_time = gpu.finish_time if gpu.current_task is not None else self.current_time
         
-        queue_length = len(gpu.task_queue)
-        if queue_length > 0:
-            effective_rate = self.get_effective_processing_rate(gpu, user_id)
-            completion_time += (TASK_SIZE_MEAN_GLOBAL / effective_rate) * queue_length
+        # キュー内の各タスクを実際のタスクサイズで計算（バッチ係数適用）
+        effective_rate = self.get_effective_processing_rate(gpu, user_id)
+        for task in gpu.task_queue:
+            task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            completion_time += task_size_mean / effective_rate
         
         return completion_time
     
@@ -208,11 +205,14 @@ class SimulatorWithOwnerPriority:
         gpu.current_task = task
         
         # 処理時間を計算
-        job_sizes = self.task_patterns.get("job_sizes", {}).get(str(task.user_id), {})
-        job_size = job_sizes.get(str(task.arrival_time))
+        sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
+        job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            user_mean = TASK_SIZE_MEANS.get(str(task.user_id), TASK_SIZE_MEAN)
+            user_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
             job_size = np.random.exponential(user_mean)
+
+        # 合計仕事量を保持
+        task.total_work = job_size
         
         # 実際の処理レート（所有者でない場合は実効性能は適用しない、実行開始時点では割り込まれていないため）
         service_time = job_size / gpu.processing_rate
@@ -258,7 +258,8 @@ class SimulatorWithOwnerPriority:
         """シミュレーション実行"""
         self.initialize()
         
-        while self.event_queue and self.current_time <= SIMULATION_TIME:
+        # 到着は3600秒まで、処理はキューが空になるまで継続
+        while self.event_queue:
             time, event_type, data = heapq.heappop(self.event_queue)
             self.current_time = time
             

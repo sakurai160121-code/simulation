@@ -34,6 +34,12 @@ def run_simulation(sim_module_name):
         sim = SimulatorWithOwnerPriority(task_patterns=patterns)
         sim.run()
         return sim
+        
+    elif sim_module_name == "simulation_with_sharing_owner_preemption":
+        from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+        sim = SimulatorWithOwnerPreemption(task_patterns=patterns)
+        sim.run()
+        return sim
 
 def extract_user_stats(sim):
     """シミュレーション結果からユーザー別統計を抽出"""
@@ -68,24 +74,26 @@ def extract_user_stats(sim):
     
     return user_stats
 
-def plot_comparison(stats_no_sharing, stats_sharing, stats_owner_priority):
-    """3つのシナリオを比較するグラフを作成"""
+def plot_comparison(stats_no_sharing, stats_sharing, stats_owner_priority, stats_preemption):
+    """4つのシナリオを比較するグラフを作成"""
     from config import NUM_USERS
     
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
     
     users = list(range(NUM_USERS))
     x = np.arange(len(users))
-    width = 0.25
+    width = 0.20
     
     # 待ち時間の比較
     wait_no_sharing = [stats_no_sharing[u]['avg_wait_time'] for u in users]
     wait_sharing = [stats_sharing[u]['avg_wait_time'] for u in users]
     wait_owner_priority = [stats_owner_priority[u]['avg_wait_time'] for u in users]
+    wait_preemption = [stats_preemption[u]['avg_wait_time'] for u in users]
     
-    ax1.bar(x - width, wait_no_sharing, width, label='非共有', color='#2E86AB')
-    ax1.bar(x, wait_sharing, width, label='共有', color='#A23B72')
-    ax1.bar(x + width, wait_owner_priority, width, label='所有者優先', color='#F18F01')
+    ax1.bar(x - 1.5*width, wait_no_sharing, width, label='非共有', color='#2E86AB')
+    ax1.bar(x - 0.5*width, wait_sharing, width, label='共有', color='#A23B72')
+    ax1.bar(x + 0.5*width, wait_owner_priority, width, label='所有者優先', color='#F18F01')
+    ax1.bar(x + 1.5*width, wait_preemption, width, label='途中切断', color='#C73E1D')
     
     ax1.set_xlabel('ユーザーID', fontsize=11)
     ax1.set_ylabel('平均待ち時間', fontsize=11)
@@ -99,10 +107,12 @@ def plot_comparison(stats_no_sharing, stats_sharing, stats_owner_priority):
     comp_no_sharing = [stats_no_sharing[u]['completion_rate'] for u in users]
     comp_sharing = [stats_sharing[u]['completion_rate'] for u in users]
     comp_owner_priority = [stats_owner_priority[u]['completion_rate'] for u in users]
+    comp_preemption = [stats_preemption[u]['completion_rate'] for u in users]
     
-    ax2.bar(x - width, comp_no_sharing, width, label='非共有', color='#2E86AB')
-    ax2.bar(x, comp_sharing, width, label='共有', color='#A23B72')
-    ax2.bar(x + width, comp_owner_priority, width, label='所有者優先', color='#F18F01')
+    ax2.bar(x - 1.5*width, comp_no_sharing, width, label='非共有', color='#2E86AB')
+    ax2.bar(x - 0.5*width, comp_sharing, width, label='共有', color='#A23B72')
+    ax2.bar(x + 0.5*width, comp_owner_priority, width, label='所有者優先', color='#F18F01')
+    ax2.bar(x + 1.5*width, comp_preemption, width, label='途中切断', color='#C73E1D')
     
     ax2.set_xlabel('ユーザーID', fontsize=11)
     ax2.set_ylabel('完了率 (%)', fontsize=11)
@@ -124,7 +134,8 @@ def plot_comparison(stats_no_sharing, stats_sharing, stats_owner_priority):
     
     for scenario_name, stats in [("非共有", stats_no_sharing), 
                                   ("共有", stats_sharing), 
-                                  ("所有者優先", stats_owner_priority)]:
+                                  ("所有者優先", stats_owner_priority),
+                                  ("途中切断", stats_preemption)]:
         avg_wait = np.mean([stats[u]['avg_wait_time'] for u in users])
         avg_comp = np.mean([stats[u]['completion_rate'] for u in users])
         total_completed = sum(stats[u]['completed'] for u in users)
@@ -150,11 +161,16 @@ if __name__ == "__main__":
     stats_sharing = extract_user_stats(sim_sharing)
     print("完了")
     
-    print("\n[3/3] 所有者優先シミュレーション実行中...")
+    print("\n[3/4] 所有者優先シミュレーション実行中...")
     sim_owner_priority = run_simulation("simulation_with_sharing_owner_priority")
     stats_owner_priority = extract_user_stats(sim_owner_priority)
     print("完了")
     
+    print("\n[4/4] 途中切断モデルシミュレーション実行中...")
+    sim_preemption = run_simulation("simulation_with_sharing_owner_preemption")
+    stats_preemption = extract_user_stats(sim_preemption)
+    print("完了")
+    
     print("\n比較グラフ作成中...")
-    plot_comparison(stats_no_sharing, stats_sharing, stats_owner_priority)
+    plot_comparison(stats_no_sharing, stats_sharing, stats_owner_priority, stats_preemption)
     print("\n分析完了！")

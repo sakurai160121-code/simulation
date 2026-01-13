@@ -15,9 +15,9 @@ from config import (
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEAN,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
+    BATCH_MULTIPLIER,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -72,8 +72,8 @@ class SimulatorWithSharing:
     
     def predict_completion_time(self, gpu):
         """
-        GPUの予想完了時刻を計算（最適化版）
-        現在のキューイング内のタスク処理時間を考慮
+        GPUの予想完了時刻を計算（正確版）
+        キュー内の各タスクの実際のタスクサイズを使用
         """
         if gpu.current_task is None and len(gpu.task_queue) == 0:
             # GPUが空いている
@@ -82,20 +82,22 @@ class SimulatorWithSharing:
         # 現在のタスクが完了する時刻
         completion_time = gpu.finish_time if gpu.current_task is not None else self.current_time
         
-        # キュー内のタスクを「平均タスクサイズ / 処理レート × キュー長」で概算
-        queue_length = len(gpu.task_queue)
-        if queue_length > 0:
-            completion_time += (TASK_SIZE_MEAN_GLOBAL / gpu.processing_rate) * queue_length
+        # キュー内の各タスクを実際のタスクサイズで計算
+        for task in gpu.task_queue:
+            task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+            completion_time += task_size_mean / gpu.processing_rate
         
         return completion_time
     
     def get_service_time(self, gpu, task):
         """タスクサイズを取得し、GPU処理レートでサービス時間を計算"""
-        job_sizes = self.task_patterns.get("job_sizes", {}).get(str(task.user_id), {})
-        job_size = job_sizes.get(str(task.arrival_time))
+        sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
+        job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            user_mean = TASK_SIZE_MEANS.get(str(task.user_id), TASK_SIZE_MEAN)
+            user_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
             job_size = np.random.exponential(user_mean)
+        # 合計仕事量を保持
+        task.total_work = job_size
         return job_size / gpu.processing_rate
     
     def select_best_gpu(self):
@@ -178,7 +180,8 @@ class SimulatorWithSharing:
         """シミュレーション実行"""
         self.initialize()
         
-        while self.event_queue and self.current_time <= SIMULATION_TIME:
+        # 到着は3600秒まで、処理はキューが空になるまで継続
+        while self.event_queue:
             time, event_type, data = heapq.heappop(self.event_queue)
             self.current_time = time
             

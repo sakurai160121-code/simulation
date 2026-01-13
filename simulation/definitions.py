@@ -45,6 +45,7 @@ class Task:
         self.start_time = None  # 処理開始時刻
         self.completion_time = None  # 完了時刻
         self.assigned_gpu = None  # 割り当てられたGPU
+        self.total_work = None  # タスク全体の仕事量（TFLOPs）
         # 共有・プリエンプトシナリオ用：残作業量（タスクサイズ）。開始時に設定、プリエンプトで更新
         self.remaining_work = None
         # 期限（締切）と失敗フラグ

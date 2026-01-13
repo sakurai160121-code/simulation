@@ -1,10 +1,11 @@
 """
 シミュレーション実行（所有者優先＋ゲストプリエンプト）
+18ユーザー・9ティア構成で実行
 所有者は自分のGPUでゲスト実行中でも割り込み可能（プリエンプト）
 プリエンプトされたゲストは、以下から動的に選択して再開する：
- 1) 自分のGPUに移動（ゲストは無視できる、所有者タスクのみ待つ）
+ 1) 自分のGPUに移動
  2) プリエンプト元GPUで所有者完了まで先頭待機
- 3) 他のGPUのキュー末尾に並ぶ（オーナー到来による中断リスクを期待値で加味）
+ 3) 他のGPUのキュー末尾に並ぶ
 プリエンプトされたタスクは残作業量から再開する。
 """
 
@@ -19,9 +20,9 @@ from config import (
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEAN,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
+    BATCH_MULTIPLIER,
     INTERRUPTION_OVERHEAD_FACTOR,
     DEADLINE_FACTOR,
 )
@@ -84,7 +85,7 @@ class SimulatorWithOwnerPreemption:
     def get_owner_utilization(self, gpu):
         owner_id = self.gpu_owner[gpu.gpu_id]
         owner_lambda = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        owner_task_size_mean = TASK_SIZE_MEANS.get(str(owner_id), TASK_SIZE_MEAN)
+        owner_task_size_mean = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
         return owner_lambda * owner_task_size_mean / gpu.processing_rate
 
     def get_effective_processing_rate(self, gpu, user_id):
@@ -95,10 +96,10 @@ class SimulatorWithOwnerPreemption:
             return gpu.processing_rate / (1.0 + rho_own)
 
     def compute_job_size(self, user_id, arrival_time):
-        job_sizes = self.task_patterns.get("job_sizes", {}).get(str(user_id), {})
+        job_sizes = self.task_patterns.get("sizes", {}).get(str(user_id), {})
         job_size = job_sizes.get(str(arrival_time))
         if job_size is None:
-            mean = TASK_SIZE_MEANS.get(str(user_id), TASK_SIZE_MEAN)
+            mean = TASK_SIZE_MEANS.get(user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
             job_size = np.random.exponential(mean)
         return job_size
 
@@ -119,7 +120,7 @@ class SimulatorWithOwnerPreemption:
         # 所有者到来率による途中切断リスクの期待ペナルティ
         owner_id = self.gpu_owner[gpu.gpu_id]
         lam = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        mean_owner_size = TASK_SIZE_MEANS.get(str(owner_id), TASK_SIZE_MEAN)
+        mean_owner_size = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
         mean_owner_service = mean_owner_size / gpu.processing_rate
         # 期待割込み回数（Poissonの期待値）：lam * service_time を用いる強化版
         expected_interruptions = lam * service_time
@@ -134,10 +135,12 @@ class SimulatorWithOwnerPreemption:
 
     def predict_completion_time_other_gpu(self, gpu, user_id, remaining_work):
         base = gpu.finish_time if gpu.current_task is not None else self.current_time
-        # 既存キューの概算（全タスクを平均サイズで代表）
-        qlen = len(gpu.task_queue)
+        # 既存キューの正確な計算（各タスクの実際のサイズを使用、バッチ係数適用）
         mu_eff = self.get_effective_processing_rate(gpu, user_id)
-        queue_time = (TASK_SIZE_MEAN_GLOBAL / mu_eff) * qlen if qlen > 0 else 0.0
+        queue_time = 0.0
+        for task in gpu.task_queue:
+            task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            queue_time += task_size_mean / mu_eff
         service_time = remaining_work / mu_eff
         penalty = self.expected_interruption_penalty(gpu, service_time)
         return base + queue_time + service_time + penalty
@@ -243,6 +246,7 @@ class SimulatorWithOwnerPreemption:
         task = user.create_task(self.current_time)
         # タスクサイズ→残作業として保持
         task.remaining_work = self.compute_job_size(user_id, task.arrival_time)
+        task.total_work = task.remaining_work
         # 締切（ユーザー自身のティア処理レートを基準にしたサービス時間×係数）
         # ユーザーのティアを取得
         tier = None
@@ -315,7 +319,8 @@ class SimulatorWithOwnerPreemption:
     # ---------------------- 実行ループ ----------------------
     def run(self):
         self.initialize()
-        while self.event_queue and self.current_time <= SIMULATION_TIME:
+        # 到着は3600秒まで、処理はキューが空になるまで継続
+        while self.event_queue:
             time, event_type, data = heapq.heappop(self.event_queue)
             self.current_time = time
             if event_type == "task_arrival":

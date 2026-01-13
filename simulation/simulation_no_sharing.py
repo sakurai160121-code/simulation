@@ -14,8 +14,9 @@ from config import (
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEAN,
     TASK_SIZE_MEANS,
+    TASK_SIZE_MEAN_GLOBAL,
+    BATCH_MULTIPLIER,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -95,11 +96,14 @@ class Simulator:
         gpu.current_task = task
         
         # タスクサイズをパターンから取得し、サービス時間を算出
-        job_sizes = self.task_patterns.get("job_sizes", {}).get(str(task.user_id), {})
-        job_size = job_sizes.get(str(task.arrival_time))
+        sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
+        job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            user_mean = TASK_SIZE_MEANS.get(str(task.user_id), TASK_SIZE_MEAN)
+            user_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
             job_size = np.random.exponential(user_mean)
+
+        # 合計仕事量を保持
+        task.total_work = job_size
 
         service_time = job_size / gpu.processing_rate
         
@@ -127,7 +131,8 @@ class Simulator:
         """シミュレーション実行"""
         self.initialize()
         
-        while self.event_queue and self.current_time <= SIMULATION_TIME:
+        # 到着は3600秒まで、処理はキューが空になるまで継続
+        while self.event_queue:
             time, event_type, data = heapq.heappop(self.event_queue)
             self.current_time = time
             
