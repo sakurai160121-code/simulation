@@ -113,9 +113,13 @@ class ResultAnalyzer:
         if self.mode == "no_sharing":
             mode_title = "【共有なしシミュレーション】"
         elif self.mode == "with_sharing":
-            mode_title = "【共有ありシミュレーション】"
+            mode_title = "【共有あり・FCFS（先着順）】"
+        elif self.mode == "with_sharing_owner_priority":
+            mode_title = "【共有あり・所有者優先】"
+        elif self.mode == "with_sharing_owner_preemption":
+            mode_title = "【共有あり・所有者優先・プリエンプト】"
         else:
-            mode_title = "【共有あり・所有者優先度シミュレーション】"
+            mode_title = "【シミュレーション結果】"
         
         print("=" * 80)
         print(mode_title)
@@ -194,17 +198,6 @@ class ResultAnalyzer:
         print(gpu_display.to_string(index=False))
         print()
         
-        # ティア別サマリー
-        print("=" * 140)
-        print("【性能ティア別サマリー】")
-        print("=" * 140)
-        for tier_name in ["tier1", "tier2", "tier3", "tier4"]:
-            tier_data = df[df['tier'] == tier_name]
-            if len(tier_data) > 0:
-                print(f"\n{tier_name.upper()} (処理レート: {tier_data['processing_rate'].iloc[0]})")
-                print(f"  平均完了率(3600s)：{tier_data['completion_rate_cutoff'].mean():.2f}%")
-                print(f"  平均待ち時間：{tier_data['avg_waiting_time'].mean():.4f} 秒")
-        
         # グローバルサマリー
         print("\n" + "=" * 140)
         print("【ユーザー別グローバルサマリー】")
@@ -237,9 +230,13 @@ class ResultAnalyzer:
         if self.mode == "no_sharing":
             mode_title = "共有なし"
         elif self.mode == "with_sharing":
-            mode_title = "共有あり"
+            mode_title = "共有あり・FCFS（先着順）"
+        elif self.mode == "with_sharing_owner_priority":
+            mode_title = "共有あり・所有者優先"
+        elif self.mode == "with_sharing_owner_preemption":
+            mode_title = "共有あり・所有者優先・プリエンプト"
         else:
-            mode_title = "共有あり・所有者優先度"
+            mode_title = "シミュレーション結果"
         
         # 2x2のサブプロットを作成
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))

@@ -31,7 +31,7 @@ class SimulatorWithOwnerPriority:
     所有者優先度ありの共有GPU版シミュレータ
     所有者のタスクは割り込み可能、他人のGPUは実効性能が低下
     """
-    def __init__(self, task_patterns=None):
+    def __init__(self, task_patterns=None, participating_users=None):
         self.users = []
         self.shared_gpus = []  # 共有GPUプール
         self.gpu_owner = {}    # GPU ID → ユーザーID（所有者）のマッピング
@@ -39,11 +39,12 @@ class SimulatorWithOwnerPriority:
         self.current_time = 0.0
         self.all_tasks = []  # シミュレーション中に発生したすべてのタスク
         self.task_patterns = task_patterns or {}  # タスク発生パターン
+        self.participating_users = participating_users if participating_users is not None else list(range(NUM_USERS))
         
     def initialize(self):
         """ユーザーと共有GPUプールを初期化"""
-        # 共有GPUプール作成（各ユーザーのGPU 20台を共有プール化）
-        for user_id in range(NUM_USERS):
+        # 共有GPUプール作成（参加ユーザーのGPUのみを共有プール化）
+        for user_id in self.participating_users:
             # ユーザーの性能ティアを決定
             tier = None
             for tier_name, user_list in GPU_TIER_ASSIGNMENT.items():
@@ -152,6 +153,10 @@ class SimulatorWithOwnerPriority:
         自分のGPU：割り込み可能
         他人のGPU：実効性能を考慮
         """
+        if not self.shared_gpus:
+            # 共有GPUプールが空の場合はNoneを返す
+            return None
+        
         best_gpu = None
         earliest_time = float('inf')
         
@@ -177,6 +182,10 @@ class SimulatorWithOwnerPriority:
         
         # 最適なGPUを選択
         best_gpu = self.select_best_gpu(user_id)
+        if best_gpu is None:
+            # GPUプールが空の場合はタスクを未完了のまま放置
+            return
+        
         task.assigned_gpu = best_gpu
         # GPU所有者IDを渡して、所有者のタスクを優先化
         owner_id = self.gpu_owner[best_gpu.gpu_id]

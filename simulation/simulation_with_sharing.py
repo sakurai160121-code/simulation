@@ -31,18 +31,19 @@ class SimulatorWithSharing:
     共有GPU版シミュレータ
     複数ユーザーが共有GPUプールを使用
     """
-    def __init__(self, task_patterns=None):
+    def __init__(self, task_patterns=None, participating_users=None):
         self.users = []
         self.shared_gpus = []  # 共有GPUプール
         self.event_queue = []  # (時刻, イベント種別, データ)
         self.current_time = 0.0
         self.all_tasks = []  # シミュレーション中に発生したすべてのタスク
         self.task_patterns = task_patterns or {}  # タスク発生パターン
+        self.participating_users = participating_users if participating_users is not None else list(range(NUM_USERS))
         
     def initialize(self):
         """ユーザーと共有GPUプールを初期化"""
-        # 共有GPUプール作成（各ユーザーのGPU 20台を共有プール化）
-        for user_id in range(NUM_USERS):
+        # 共有GPUプール作成（参加ユーザーのGPUのみを共有プール化）
+        for user_id in self.participating_users:
             # ユーザーの性能ティアを決定
             tier = None
             for tier_name, user_list in GPU_TIER_ASSIGNMENT.items():
@@ -105,6 +106,9 @@ class SimulatorWithSharing:
         完了時刻が最も早いGPUを選択
         Returns: GPU
         """
+        if not self.shared_gpus:
+            return None
+        
         best_gpu = None
         earliest_time = float('inf')
         
@@ -124,6 +128,10 @@ class SimulatorWithSharing:
         
         # 最適なGPUを選択
         best_gpu = self.select_best_gpu()
+        if best_gpu is None:
+            # GPUプールが空の場合はタスクを未完了のまま放置
+            return
+        
         task.assigned_gpu = best_gpu
         best_gpu.add_task(task)
         

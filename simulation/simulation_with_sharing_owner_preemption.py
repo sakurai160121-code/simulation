@@ -24,7 +24,6 @@ from config import (
     TASK_SIZE_MEAN_GLOBAL,
     BATCH_MULTIPLIER,
     INTERRUPTION_OVERHEAD_FACTOR,
-    DEADLINE_FACTOR,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -37,7 +36,7 @@ class SimulatorWithOwnerPreemption:
     """
     所有者優先＋ゲストプリエンプトの共有GPU版シミュレータ
     """
-    def __init__(self, task_patterns=None):
+    def __init__(self, task_patterns=None, participating_users=None):
         self.users = []
         self.shared_gpus = []
         self.gpu_owner = {}
@@ -45,6 +44,7 @@ class SimulatorWithOwnerPreemption:
         self.current_time = 0.0
         self.all_tasks = []
         self.task_patterns = task_patterns or {}
+        self.participating_users = participating_users if participating_users is not None else list(range(NUM_USERS))
         # デバッグ用カウンタ
         self.preemption_count = 0
         self.realloc_own = 0
@@ -53,8 +53,8 @@ class SimulatorWithOwnerPreemption:
 
     # ---------------------- 基本セットアップ ----------------------
     def initialize(self):
-        # 共有GPUプール作成
-        for user_id in range(NUM_USERS):
+        # 共有GPUプール作成（参加ユーザーのGPUのみ）
+        for user_id in self.participating_users:
             tier = None
             for tier_name, user_list in GPU_TIER_ASSIGNMENT.items():
                 if user_id in user_list:
@@ -146,6 +146,9 @@ class SimulatorWithOwnerPreemption:
         return base + queue_time + service_time + penalty
 
     def select_best_gpu_for_new(self, user_id, remaining_work):
+        if not self.shared_gpus:
+            return None
+        
         best_gpu = None
         best_time = float('inf')
         for gpu in self.shared_gpus:
@@ -159,9 +162,18 @@ class SimulatorWithOwnerPreemption:
         return best_gpu
 
     def select_after_preempt(self, task, preempt_gpu):
-        # 1) 自分のGPU
-        own_gpu = self.shared_gpus[task.user_id]
-        t_own = self.predict_completion_time_own_gpu(own_gpu, task.user_id, task.remaining_work)
+        # 1) 自分のGPU（参加していない場合はスキップ）
+        own_gpu = None
+        for gpu in self.shared_gpus:
+            if self.gpu_owner[gpu.gpu_id] == task.user_id:
+                own_gpu = gpu
+                break
+        
+        if own_gpu is None:
+            # 自分のGPUがない場合は他の選択肢のみを検討
+            t_own = float('inf')
+        else:
+            t_own = self.predict_completion_time_own_gpu(own_gpu, task.user_id, task.remaining_work)
 
         # 2) プリエンプト元GPUで先頭待機（所有者待ち）
         wait_owner = self.predict_owner_wait_on_gpu(preempt_gpu, self.gpu_owner[preempt_gpu.gpu_id])
@@ -256,6 +268,10 @@ class SimulatorWithOwnerPreemption:
 
         # 最適GPU選択（他GPUは中断リスク期待値込み）
         best_gpu = self.select_best_gpu_for_new(user_id, task.remaining_work)
+        if best_gpu is None:
+            # GPUプールが空の場合はタスクを未完了のまま放置
+            return
+        
         task.assigned_gpu = best_gpu
 
         # 自分のGPUを選ぶ場合、ゲストが走っていればプリエンプト
