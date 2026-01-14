@@ -167,7 +167,10 @@ class SimulatorWithOwnerPreemption:
         wait_owner = self.predict_owner_wait_on_gpu(preempt_gpu, self.gpu_owner[preempt_gpu.gpu_id])
         # ゲストはμ_effで処理されるためサービス率を実効値に
         mu_eff_here = self.get_effective_processing_rate(preempt_gpu, task.user_id)
-        t_wait_here = self.current_time + wait_owner + task.remaining_work / mu_eff_here
+        service_time_here = task.remaining_work / mu_eff_here
+        # 再開後の割り込みリスクを考慮
+        penalty_here = self.expected_interruption_penalty(preempt_gpu, service_time_here)
+        t_wait_here = self.current_time + wait_owner + service_time_here + penalty_here
 
         # 3) 他GPUのキュー末尾（期待ペナルティ込み）から最良を探す
         best_other_time = float('inf')

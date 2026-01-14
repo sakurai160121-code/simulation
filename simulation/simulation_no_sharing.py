@@ -75,15 +75,16 @@ class Simulator:
         
         # タスクをユーザーのGPUに割り当て
         task.assigned_gpu = user.gpu
-        user.gpu.add_task(task)
         
-        # GPUが空いていたら即座に処理開始
+        # GPUが空いていたら即座に処理開始、そうでなければキューに追加
         if user.gpu.current_task is None:
             self.start_task_on_gpu(user.gpu, task)
+        else:
+            user.gpu.add_task(task)
         
         # 次のタスク発生をスケジュール（パターンから取得）
         arrivals = self.task_patterns.get("arrivals", {}).get(str(user_id), [])
-        next_arrival_index = len([t for t in user.tasks if t is not None])
+        next_arrival_index = user.task_count  # 直接的にtask_countを使用
         
         if next_arrival_index < len(arrivals):
             next_arrival = arrivals[next_arrival_index]
