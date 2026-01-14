@@ -20,8 +20,15 @@ class GPU:
         owner_id が指定されている場合、所有者のタスクを優先
         """
         if owner_id is not None and task.user_id == owner_id:
-            # 所有者のタスク：キューの先頭に挿入（割り込み）
-            self.task_queue.insert(0, task)
+            # 所有者のタスク：既存の所有者タスクの後、ゲストタスクの前に挿入
+            # 所有者タスク間ではFCFSを維持
+            insert_pos = 0
+            for i, t in enumerate(self.task_queue):
+                if t.user_id == owner_id:
+                    insert_pos = i + 1
+                else:
+                    break
+            self.task_queue.insert(insert_pos, task)
         else:
             # 他人のタスク：末尾に追加
             self.task_queue.append(task)
