@@ -16,7 +16,8 @@ from config import (
     GPU_TIER_ASSIGNMENT,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
-    BATCH_MULTIPLIER,
+    BATCH_SIZES,
+    EPOCHS,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -100,7 +101,10 @@ class Simulator:
         sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
         job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            user_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+            batch_size = BATCH_SIZES.get(task.user_id, 1000)
+            epochs = EPOCHS.get(task.user_id, 1)
+            user_mean = base_size * batch_size * epochs
             job_size = np.random.exponential(user_mean)
 
         # 合計仕事量を保持

@@ -28,6 +28,13 @@ class GPU:
                     insert_pos = i + 1
                 else:
                     break
+            
+            # 割り込みイベントとして1件だけ記録（キュー先頭で押し出されたタスクを対象）
+            if insert_pos < len(self.task_queue):
+                victim = self.task_queue[insert_pos]
+                victim.interrupted_by.add(task.task_id)
+                task.interrupted_others.add(victim.task_id)
+            
             self.task_queue.insert(insert_pos, task)
         else:
             # 他人のタスク：末尾に追加
@@ -58,6 +65,12 @@ class Task:
         # 期限（締切）と失敗フラグ
         self.deadline = None
         self.failed = False
+        
+        # 割り込み・プリエンプション統計
+        self.interrupted_by = set()  # このタスクを割り込んだタスクIDのセット
+        self.preempted_count = 0  # このタスクが実行中にプリエンプトされた回数
+        self.interrupted_others = set()  # このタスクが割り込んだタスクIDのセット
+        self.preempted_others_count = 0  # このタスクが他のタスクをプリエンプトした回数
         
     def get_waiting_time(self):
         """待ち時間 = 開始時刻 - 発生時刻"""

@@ -5,7 +5,7 @@
 
 import numpy as np
 import json
-from config import NUM_USERS, ARRIVAL_RATE, SIMULATION_TIME, TASK_SIZE_MEANS, BATCH_MULTIPLIER, RANDOM_SEED
+from config import NUM_USERS, ARRIVAL_RATE, SIMULATION_TIME, TASK_SIZE_MEANS, BATCH_SIZES, EPOCHS, RANDOM_SEED
 
 
 def generate_task_arrivals():
@@ -49,8 +49,10 @@ def generate_task_sizes(task_arrivals):
         user_id = int(user_id_str)
         
         # ユーザーのタスクサイズ平均を取得
-        # 1タスク=100枚バッチ分にスケール
-        mean_size = TASK_SIZE_MEANS[user_id] * BATCH_MULTIPLIER
+        base_size = TASK_SIZE_MEANS[user_id]
+        batch_size = BATCH_SIZES.get(user_id, 1000)
+        epochs = EPOCHS.get(user_id, 1)
+        mean_size = base_size * batch_size * epochs
         
         task_sizes[user_id_str] = {}
         for arrival_time in arrivals:

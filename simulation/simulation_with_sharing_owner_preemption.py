@@ -22,7 +22,8 @@ from config import (
     GPU_TIER_ASSIGNMENT,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
-    BATCH_MULTIPLIER,
+    BATCH_SIZES,
+    EPOCHS,
     INTERRUPTION_OVERHEAD_FACTOR,
 )
 from results import analyze_and_print_results
@@ -85,7 +86,9 @@ class SimulatorWithOwnerPreemption:
     def get_owner_utilization(self, gpu):
         owner_id = self.gpu_owner[gpu.gpu_id]
         owner_lambda = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        owner_task_size_mean = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+        batch_size = BATCH_SIZES.get(owner_id, 1000)
+        epochs = EPOCHS.get(owner_id, 1)
+        owner_task_size_mean = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL) * batch_size * epochs
         return owner_lambda * owner_task_size_mean / gpu.processing_rate
 
     def get_effective_processing_rate(self, gpu, user_id):
@@ -99,7 +102,10 @@ class SimulatorWithOwnerPreemption:
         job_sizes = self.task_patterns.get("sizes", {}).get(str(user_id), {})
         job_size = job_sizes.get(str(arrival_time))
         if job_size is None:
-            mean = TASK_SIZE_MEANS.get(user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            base_size = TASK_SIZE_MEANS.get(user_id, TASK_SIZE_MEAN_GLOBAL)
+            batch_size = BATCH_SIZES.get(user_id, 1000)
+            epochs = EPOCHS.get(user_id, 1)
+            mean = base_size * batch_size * epochs
             job_size = np.random.exponential(mean)
         return job_size
 
@@ -120,7 +126,10 @@ class SimulatorWithOwnerPreemption:
         # 所有者到来率による途中切断リスクの期待ペナルティ
         owner_id = self.gpu_owner[gpu.gpu_id]
         lam = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        mean_owner_size = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+        base_size = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL)
+        batch_size = BATCH_SIZES.get(owner_id, 1000)
+        epochs = EPOCHS.get(owner_id, 1)
+        mean_owner_size = base_size * batch_size * epochs
         mean_owner_service = mean_owner_size / gpu.processing_rate
         # 期待割込み回数（Poissonの期待値）：lam * service_time を用いる強化版
         expected_interruptions = lam * service_time
@@ -139,7 +148,10 @@ class SimulatorWithOwnerPreemption:
         mu_eff = self.get_effective_processing_rate(gpu, user_id)
         queue_time = 0.0
         for task in gpu.task_queue:
-            task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+            batch_size = BATCH_SIZES.get(task.user_id, 1000)
+            epochs = EPOCHS.get(task.user_id, 1)
+            task_size_mean = base_size * batch_size * epochs
             queue_time += task_size_mean / mu_eff
         service_time = remaining_work / mu_eff
         penalty = self.expected_interruption_penalty(gpu, service_time)
@@ -225,6 +237,10 @@ class SimulatorWithOwnerPreemption:
             # ゲストをプリエンプト
             self.preemption_count += 1
             guest = gpu.current_task
+            
+            # プリエンプト回数を記録
+            guest.preempted_count += 1
+            
             elapsed = max(0.0, self.current_time - (guest.start_time or self.current_time))
             # 実際に用いている処理率（ゲストはμ_eff）で処理量を算出
             rate_used = self.get_effective_processing_rate(gpu, guest.user_id)
@@ -276,6 +292,10 @@ class SimulatorWithOwnerPreemption:
 
         # 自分のGPUを選ぶ場合、ゲストが走っていればプリエンプト
         if self.gpu_owner[best_gpu.gpu_id] == user_id:
+            # プリエンプトが発生する場合、このタスクがプリエンプトしたことを記録
+            if best_gpu.current_task is not None and best_gpu.current_task.user_id != user_id:
+                task.preempted_others_count += 1
+            
             self.preempt_guest_if_needed(best_gpu, owner_id=user_id)
 
         # キューへ投入（所有者優先）

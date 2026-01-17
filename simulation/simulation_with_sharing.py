@@ -17,7 +17,8 @@ from config import (
     GPU_TIER_ASSIGNMENT,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
-    BATCH_MULTIPLIER,
+    BATCH_SIZES,
+    EPOCHS,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -63,9 +64,12 @@ class SimulatorWithSharing:
             user = User(user_id=user_id, gpu=None, arrival_rate=ARRIVAL_RATE)
             self.users.append(user)
             
-            # 最初のタスク発生イベントをスケジュール
-            first_arrival = np.random.exponential(1.0 / ARRIVAL_RATE)
-            self.schedule_event(first_arrival, "task_arrival", user_id)
+            # 最初のタスク発生イベントをスケジュール（task_patternsから取得）
+            arrivals = self.task_patterns.get("arrivals", {}).get(str(user_id), [])
+            if arrivals and len(arrivals) > 0:
+                first_arrival = arrivals[0]
+                if first_arrival <= SIMULATION_TIME:
+                    self.schedule_event(first_arrival, "task_arrival", user_id)
     
     def schedule_event(self, time, event_type, data):
         """イベントをスケジュール"""
@@ -95,7 +99,10 @@ class SimulatorWithSharing:
         sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
         job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            user_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+            batch_size = BATCH_SIZES.get(task.user_id, 1000)
+            epochs = EPOCHS.get(task.user_id, 1)
+            user_mean = base_size * batch_size * epochs
             job_size = np.random.exponential(user_mean)
         # 合計仕事量を保持
         task.total_work = job_size

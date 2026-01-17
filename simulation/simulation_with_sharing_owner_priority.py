@@ -17,7 +17,8 @@ from config import (
     GPU_TIER_ASSIGNMENT,
     TASK_SIZE_MEANS,
     TASK_SIZE_MEAN_GLOBAL,
-    BATCH_MULTIPLIER,
+    BATCH_SIZES,
+    EPOCHS,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -124,7 +125,10 @@ class SimulatorWithOwnerPriority:
         for task in gpu.task_queue:
             if task.user_id == user_id:
                 # 自分のタスクのサービス時間（バッチ係数適用）
-                task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+                base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+                batch_size = BATCH_SIZES.get(task.user_id, 1000)
+                epochs = EPOCHS.get(task.user_id, 1)
+                task_size_mean = base_size * batch_size * epochs
                 user_queue_time += task_size_mean / gpu.processing_rate
         
         return self.current_time + current_remaining + user_queue_time
@@ -142,7 +146,10 @@ class SimulatorWithOwnerPriority:
         # キュー内の各タスクを実際のタスクサイズで計算（バッチ係数適用）
         effective_rate = self.get_effective_processing_rate(gpu, user_id)
         for task in gpu.task_queue:
-            task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+            batch_size = BATCH_SIZES.get(task.user_id, 1000)
+            epochs = EPOCHS.get(task.user_id, 1)
+            task_size_mean = base_size * batch_size * epochs
             completion_time += task_size_mean / effective_rate
         
         return completion_time
@@ -217,7 +224,10 @@ class SimulatorWithOwnerPriority:
         sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
         job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            user_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL) * BATCH_MULTIPLIER
+            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+            batch_size = BATCH_SIZES.get(task.user_id, 1000)
+            epochs = EPOCHS.get(task.user_id, 1)
+            user_mean = base_size * batch_size * epochs
             job_size = np.random.exponential(user_mean)
 
         # 合計仕事量を保持
