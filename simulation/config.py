@@ -8,7 +8,7 @@ NUM_USERS = 18
 
 # タスク到着率（ポアソン過程）
 # 全ユーザー共通
-ARRIVAL_RATE = 0.2  # λ=0.2 (5秒に1回タスク発生の平均)
+ARRIVAL_RATE = 0.005  # λ=0.005 (200秒に1回タスク発生の平均)
 ARRIVAL_RATES = {str(i): ARRIVAL_RATE for i in range(18)}  # 全ユーザー同じ到着率
 
 # GPU性能（TFLOPS）
@@ -57,7 +57,7 @@ BATCH_SIZES = {
 }
 
 # エポック数（全ユーザー共通）
-EPOCHS = {i: 1 for i in range(18)}
+EPOCHS = {i: 10 for i in range(18)}
 
 # バッチ処理係数（後方互換性のため残す、実際はBATCH_SIZESとEPOCHSを使用）
 BATCH_MULTIPLIER = 1000.0
@@ -81,7 +81,7 @@ GPU_TIER_ASSIGNMENT = {
 }
 
 # シミュレーション終了時刻
-SIMULATION_TIME = 3600.0  # 1時間（3600秒）
+SIMULATION_TIME = 86400.0  # 1日（86400秒）
 
 # ランダムシード（再現性のため）
 RANDOM_SEED = 42

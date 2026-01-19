@@ -259,6 +259,56 @@ def generate_graphs(all_tasks):
         print(f"  ✓ ユーザー{user_id}の比較グラフを生成: {filename}")
     
     print("\n✓ 全ユーザー別比較グラフ生成完了（18ファイル）")
+    
+    # Step3: 特定ユーザー（3～8）のシナリオ別平均待ち時間折れ線グラフ
+    print("\n" + "-"*80)
+    print("特定ユーザーのシナリオ別平均待ち時間グラフを生成中...")
+    print("-"*80)
+    
+    target_users_table = [0, 1, 2, 3, 4, 5, 6, 7, 8]  # 表形式出力用
+    scenario_labels = ["共有なし", "FCFS\n(先着順)", "所有者\n優先", "所有者優先+\nプリエンプト"]
+    scenario_modes = ["no_sharing", "with_sharing", "with_sharing_owner_priority", "with_sharing_owner_preemption"]
+    
+    # ユーザー0～8の表形式出力
+    print("\n  ユーザー0～8の詳細結果を表で生成中...")
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.axis('tight')
+    ax.axis('off')
+    
+    table_data = [['ユーザーID'] + scenario_labels]
+    for user_id in target_users_table:
+        row = [f'ユーザー{user_id}']
+        for mode in scenario_modes:
+            user_stat = user_stats_by_scenario[mode][user_id]
+            avg_wait = user_stat['avg_waiting_time']
+            row.append(f'{avg_wait:.2f}秒')
+        table_data.append(row)
+    
+    table = ax.table(cellText=table_data, cellLoc='center', loc='center',
+                    colWidths=[0.2] + [0.2]*len(scenario_labels))
+    table.auto_set_font_size(False)
+    table.set_fontsize(16)
+    table.scale(1, 2.5)
+    
+    # ヘッダー行のスタイリング
+    for i in range(len(scenario_labels) + 1):
+        table[(0, i)].set_facecolor('#40466e')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+    
+    # 交互に背景色を付ける
+    for i in range(1, len(table_data)):
+        for j in range(len(scenario_labels) + 1):
+            if i % 2 == 0:
+                table[(i, j)].set_facecolor('#f0f0f0')
+    
+    ax.set_title('ユーザー0～8の平均待ち時間詳細', fontsize=18, fontweight='bold', pad=20)
+    
+    plt.tight_layout()
+    plt.savefig('./scenario_table_users_0_to_8.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print("  ✓ 詳細表を生成: scenario_table_users_0_to_8.png")
 
 def main():
     """メイン処理"""

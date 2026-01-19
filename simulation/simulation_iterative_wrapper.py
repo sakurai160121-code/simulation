@@ -498,8 +498,9 @@ def main():
     all_histories = {}
     all_change_logs = {}
 
-    # 3シナリオで共通の初期ランダム参加（実行ごとに変化）
-    base_participation = {i: np.random.rand() > 0.5 for i in range(NUM_USERS)}
+    # 3シナリオで共通の初期ランダム参加（2人）
+    participants = np.random.choice(NUM_USERS, size=2, replace=False)
+    base_participation = {i: (i in participants) for i in range(NUM_USERS)}
     
     for scenario_class, scenario_name in scenarios:
         print("\n\n")
