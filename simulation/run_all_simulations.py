@@ -9,6 +9,21 @@ import os
 import sys
 from datetime import datetime
 
+# 出力ディレクトリの設定
+OUTPUT_DIR_BASE = './outputs'
+OUTPUT_DIR_BASIC = './outputs/basic_scenarios'
+OUTPUT_DIR_USER_COMP = './outputs/user_comparisons'
+OUTPUT_DIR_TABLES = './outputs/tables'
+
+# 出力ディレクトリを作成
+for dir_path in [OUTPUT_DIR_BASE, OUTPUT_DIR_BASIC, OUTPUT_DIR_USER_COMP, OUTPUT_DIR_TABLES]:
+    os.makedirs(dir_path, exist_ok=True)
+
+# Windows環境でUnicode出力を有効化
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 def run_task_pattern_generation():
     """タスクパターン生成"""
     print("\n" + "="*80)
@@ -75,12 +90,11 @@ def run_base_scenarios():
         # タスクデータを保存
         all_tasks[mode] = tasks
         
-        # 平均待ち時間を計算
+        # 平均待ち時間を計算（到着から完了までの時間）
         completed_tasks = [t for t in tasks if t.completion_time is not None]
         if completed_tasks:
-            waiting_times = [t.start_time - t.arrival_time for t in completed_tasks 
-                           if t.start_time is not None]
-            avg_wait = sum(waiting_times) / len(waiting_times) if waiting_times else 0
+            response_times = [t.completion_time - t.arrival_time for t in completed_tasks]
+            avg_wait = sum(response_times) / len(response_times) if response_times else 0
             results[scenario_name] = avg_wait
             print(f"✓ 完了 - 平均待ち時間: {avg_wait:.2f}秒")
         else:
@@ -253,7 +267,8 @@ def generate_graphs(all_tasks):
         ax3.set_title('GPU使用統計', fontsize=10, fontweight='bold', pad=20)
         
         filename = f'user_comparison_{user_id:02d}.png'
-        plt.savefig(f'./{filename}', dpi=300, bbox_inches='tight')
+        output_path = os.path.join(OUTPUT_DIR_USER_COMP, filename)
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         
         print(f"  ✓ ユーザー{user_id}の比較グラフを生成: {filename}")
@@ -265,12 +280,12 @@ def generate_graphs(all_tasks):
     print("特定ユーザーのシナリオ別平均待ち時間グラフを生成中...")
     print("-"*80)
     
-    target_users_table = [0, 1, 2, 3, 4, 5, 6, 7, 8]  # 表形式出力用
+    target_users_table = [0, 1, 2]  # 表形式出力用（0～2のみに変更）
     scenario_labels = ["共有なし", "FCFS\n(先着順)", "所有者\n優先", "所有者優先+\nプリエンプト"]
     scenario_modes = ["no_sharing", "with_sharing", "with_sharing_owner_priority", "with_sharing_owner_preemption"]
     
-    # ユーザー0～8の表形式出力
-    print("\n  ユーザー0～8の詳細結果を表で生成中...")
+    # ユーザー0～2の表形式出力
+    print("\n  ユーザー0～2の詳細結果を表で生成中...")
     
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.axis('tight')
@@ -302,13 +317,80 @@ def generate_graphs(all_tasks):
             if i % 2 == 0:
                 table[(i, j)].set_facecolor('#f0f0f0')
     
-    ax.set_title('ユーザー0～8の平均待ち時間詳細', fontsize=18, fontweight='bold', pad=20)
+    ax.set_title('ユーザー0～2の平均待ち時間詳細', fontsize=18, fontweight='bold', pad=20)
     
     plt.tight_layout()
-    plt.savefig('./scenario_table_users_0_to_8.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(OUTPUT_DIR_TABLES, 'scenario_table_users_0_to_2.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print("  ✓ 詳細表を生成: scenario_table_users_0_to_8.png")
+    print("  ✓ 詳細表を生成: scenario_table_users_0_to_2.png")
+    
+    # Step4: ユーザー3～8の折れ線グラフ（GPU性能表の3段階色に合わせる）
+    print("\n" + "-"*80)
+    print("ユーザー3～8のシナリオ別平均待ち時間折れ線グラフを生成中...")
+    print("-"*80)
+    
+    # より濃い色で折れ線グラフを描画
+    tier_colors = {
+        # グループ1（濃い青） - Tier1-3
+        "tier1": "#0d47a1",
+        "tier2": "#1565c0", 
+        "tier3": "#1976d2",
+        # グループ2（明るい黄色） - Tier4-6
+        "tier4": "#ffed4e",
+        "tier5": "#ffe082",
+        "tier6": "#ffd54f",
+        # グループ3（濃い赤） - Tier7-9
+        "tier7": "#c1272d",
+        "tier8": "#d62728",
+        "tier9": "#e63946"
+    }
+    
+    # ユーザーとティアのマッピング
+    user_to_tier = {
+        0: "tier1", 1: "tier2", 2: "tier3",
+        3: "tier4", 4: "tier5", 5: "tier6",
+        6: "tier7", 7: "tier8", 8: "tier9",
+        9: "tier1", 10: "tier2", 11: "tier3",
+        12: "tier4", 13: "tier5", 14: "tier6",
+        15: "tier7", 16: "tier8", 17: "tier9"
+    }
+    
+    fig, ax = plt.subplots(figsize=(12, 7))
+    
+    target_users_line = [3, 4, 5, 6, 7, 8]  # 折れ線グラフ用
+    scenario_names = ["共有なし", "FCFS", "所有者優先", "所有者優先+\nプリエンプト"]
+    scenario_modes = ["no_sharing", "with_sharing", "with_sharing_owner_priority", "with_sharing_owner_preemption"]
+    
+    # 各ユーザーのデータを折れ線でプロット
+    for user_id in target_users_line:
+        tier = user_to_tier[user_id]
+        line_color = tier_colors[tier]
+        
+        avg_wait_values = []
+        for mode in scenario_modes:
+            user_stat = user_stats_by_scenario[mode][user_id]
+            avg_wait_values.append(user_stat['avg_waiting_time'])
+        
+        ax.plot(range(len(scenario_names)), avg_wait_values, marker='o', label=f'ユーザー{user_id}', 
+               color=line_color, linewidth=2.5, markersize=8)
+    
+    ax.set_xlabel('シナリオ', fontsize=20, fontweight='bold')
+    ax.set_ylabel('平均待ち時間（秒）', fontsize=20, fontweight='bold')
+    ax.set_title('ユーザー3～8のシナリオ別平均待ち時間推移', fontsize=20, fontweight='bold')
+    ax.set_xticks(range(len(scenario_names)))
+    ax.set_xticklabels(scenario_names, fontsize=20)
+    ax.tick_params(axis='y', labelsize=20)
+    ax.legend(loc='upper right', fontsize=14, ncol=2)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    
+    plt.tight_layout()
+    output_path = os.path.join(OUTPUT_DIR_TABLES, 'users_3_to_8_line_graph.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print("  ✓ 折れ線グラフを生成: users_3_to_8_line_graph.png")
 
 def main():
     """メイン処理"""

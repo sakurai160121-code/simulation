@@ -16,12 +16,12 @@ ARRIVAL_RATES = {str(i): ARRIVAL_RATE for i in range(18)}  # 全ユーザー同�
 GPU_PERFORMANCE_LEVELS = {
     "tier1": 2.98,        # GTX 1650
     "tier2": 8.87,        # GTX 1080
-    "tier3": 29.15,       # RTX 4070
-    "tier4": 36.41,       # RTX 3050
-    "tier5": 64.83,       # RTX 3060Ti
-    "tier6": 82.60,       # RTX 2080
-    "tier7": 110.00,      # RTX 2080Ti
-    "tier8": 130.50,      # Titan RTX
+    "tier3": 20.41,       # RTX 3050
+    "tier4": 64.83,       # RTX 3060Ti
+    "tier5": 82.60,       # RTX 2080
+    "tier6": 110.00,      # RTX 2080Ti
+    "tier7": 180.50,      # Titan RTX
+    "tier8": 233,         # RTX 4070
     "tier9": 311.84,      # A100
 }
 

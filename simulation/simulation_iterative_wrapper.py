@@ -3,6 +3,18 @@
 既存シミュレータクラスを参加状態に応じて呼び出す反復最適化フレームワーク
 """
 
+import os
+import sys
+
+# 出力ディレクトリの設定
+OUTPUT_DIR_ITERATIVE = './outputs/iterative_results'
+os.makedirs(OUTPUT_DIR_ITERATIVE, exist_ok=True)
+
+# Windows環境でUnicode出力を有効化
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 import numpy as np
 import heapq
 import copy
@@ -19,8 +31,6 @@ from config import (
     EPOCHS,
 )
 from task_patterns import load_patterns, save_patterns
-import os
-import sys
 from io import StringIO
 import matplotlib.pyplot as plt
 import matplotlib
@@ -106,9 +116,8 @@ class IterativeOptimizer:
             completed_tasks_shared = [t for t in user_tasks_shared if t.completion_time is not None]
             
             if completed_tasks_shared:
-                waiting_times_shared = [t.start_time - t.arrival_time for t in completed_tasks_shared 
-                                if t.start_time is not None]
-                avg_wait_shared = np.mean(waiting_times_shared) if waiting_times_shared else float('inf')
+                response_times_shared = [t.completion_time - t.arrival_time for t in completed_tasks_shared]
+                avg_wait_shared = np.mean(response_times_shared) if response_times_shared else float('inf')
             else:
                 avg_wait_shared = float('inf')
             
@@ -117,9 +126,8 @@ class IterativeOptimizer:
             completed_tasks_no_sharing = [t for t in user_tasks_no_sharing if t.completion_time is not None]
             
             if completed_tasks_no_sharing:
-                waiting_times_no_sharing = [t.start_time - t.arrival_time for t in completed_tasks_no_sharing 
-                                    if t.start_time is not None]
-                avg_wait_no_sharing = np.mean(waiting_times_no_sharing) if waiting_times_no_sharing else float('inf')
+                response_times_no_sharing = [t.completion_time - t.arrival_time for t in completed_tasks_no_sharing]
+                avg_wait_no_sharing = np.mean(response_times_no_sharing) if response_times_no_sharing else float('inf')
             else:
                 avg_wait_no_sharing = float('inf')
             
@@ -199,9 +207,8 @@ class IterativeOptimizer:
             completed_tasks = [t for t in target_tasks if t.completion_time is not None]
             
             if completed_tasks:
-                waiting_times = [t.start_time - t.arrival_time for t in completed_tasks 
-                               if t.start_time is not None]
-                shared_wait = np.mean(waiting_times) if waiting_times else float('inf')
+                response_times = [t.completion_time - t.arrival_time for t in completed_tasks]
+                shared_wait = np.mean(response_times) if response_times else float('inf')
             else:
                 shared_wait = float('inf')
         finally:
@@ -217,7 +224,7 @@ class IterativeOptimizer:
         return should_participate, shared_wait, standalone_wait
     
     def run_iterative_optimization(self, scenario_class, scenario_name, max_iterations=10, initial_participation=None):
-        """反復最適化実行（最大10イテレーション、毎回ユーザー別結果を出力）"""
+        """反復最適化実行（固定10イテレーション実行）"""
         print("=" * 80)
         print(f"反復型シミュレーション開始：{scenario_name}")
         print("=" * 80)
@@ -228,7 +235,6 @@ class IterativeOptimizer:
         else:
             participation_status = copy.deepcopy(initial_participation)
         print(f"\n【第1ループ】ランダム参加")
-        iteration = 0
         print(f"参加者数：{sum(participation_status.values())}/{NUM_USERS}")
         
         prev_stats = None
@@ -236,7 +242,8 @@ class IterativeOptimizer:
         avg_wait_history = []  # 全体平均待ち時間の履歴
         change_log = []  # イテレーションごとの変更履歴
         
-        while True:
+        # 固定10イテレーション実行
+        for iteration in range(max_iterations):
             print(f"\n--- イテレーション {iteration + 1} ---")
             
             # シミュレーション実行
@@ -342,27 +349,23 @@ class IterativeOptimizer:
                     
                     if shared < float('inf') and standalone < float('inf'):
                         if detail['new_status'] == "参加":
-                            reason = f"共有({shared:.1f}) ≤ 閾値({threshold:.1f})"
+                            reason = f"共有({shared:.1f}) <= 閾値({threshold:.1f})"
                         else:
                             reason = f"共有({shared:.1f}) > 閾値({threshold:.1f})"
                         print(f"{uid:3d}  {change:10s}  {shared:12.2f}秒  {standalone:12.2f}秒  {threshold:12.2f}秒  {reason}")
                     else:
                         print(f"{uid:3d}  {change:10s}  {'N/A':>12s}  {'N/A':>12s}  {'N/A':>12s}  データ不足")
             else:
-                print(f"\n参加状態変更：0人（収束）")
+                print(f"\n参加状態変更：0人（このイテレーション）")
             
-            # 収束判定または最大反復数に達したかチェック
-            if changes == 0:
-                print(f"\n収束しました（イテレーション {iteration + 1}）")
+            # 次のイテレーションに向けて参加状態を更新（固定10ループなので最後まで継続）
+            if iteration + 1 < max_iterations:
+                participation_status = new_participation
+                prev_stats = stats
+            else:
+                # 最後のイテレーション（10ループ目）
+                print(f"\n固定 {max_iterations} イテレーション実行完了")
                 break
-            
-            if iteration + 1 >= max_iterations:
-                print(f"\n最大イテレーション数 {max_iterations} に到達しました")
-                break
-            
-            participation_status = new_participation
-            prev_stats = stats
-            iteration += 1
         
         # 最終結果を保存（表示は後でまとめて行う）
         final_stats = self.run_scenario_with_participation(scenario_class, participation_status, suppress_output=True)
@@ -476,7 +479,8 @@ def _save_flow_table(scenario_name, participation_history, performance_history, 
     slug = _scenario_slug(scenario_name)
     filename = f"flow_table_{slug}.png"
     plt.tight_layout()
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    output_path = os.path.join(OUTPUT_DIR_ITERATIVE, os.path.basename(filename))
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
     print(f"参加フローテーブルを '{filename}' に保存しました")
 
@@ -498,8 +502,9 @@ def main():
     all_histories = {}
     all_change_logs = {}
 
-    # 3シナリオで共通の初期ランダム参加（2人）
-    participants = np.random.choice(NUM_USERS, size=2, replace=False)
+    # 3シナリオで共通の初期参加者：ランダムに50%のユーザーが参加（9人）
+    num_participants = int(NUM_USERS * 0.5)  # 50%
+    participants = np.random.choice(NUM_USERS, size=num_participants, replace=False)
     base_participation = {i: (i in participants) for i in range(NUM_USERS)}
     
     for scenario_class, scenario_name in scenarios:
@@ -604,8 +609,80 @@ def main():
     ax = plt.gca()
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     plt.tight_layout()
-    plt.savefig('participant_count_history.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(OUTPUT_DIR_ITERATIVE, 'participant_count_history.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print("グラフを 'participant_count_history.png' に保存しました")
+    
+    # Step: 性能グループ別（低・中・高）の参加者数推移グラフを各シナリオごとに作成
+    print("\n\n")
+    print("=" * 80)
+    print("性能グループ別の参加者数推移グラフを作成中（共有なし除外、3シナリオ）...")
+    print("=" * 80)
+    
+    # ユーザーグループの定義
+    low_performance_users = [0, 1, 2, 9, 10, 11]      # 低性能GPU
+    mid_performance_users = [3, 4, 5, 12, 13, 14]      # 中性能GPU
+    high_performance_users = [6, 7, 8, 15, 16, 17]     # 高性能GPU
+    
+    # グループの色
+    group_colors = {
+        'low': '#0d47a1',      # 濃い青
+        'mid': '#ffed4e',      # 明るい黄色
+        'high': '#d62728'      # 濃い赤
+    }
+    
+    # 共有なし以外の3シナリオ
+    scenarios_for_graphs = [
+        (SimulatorWithSharing, 'FCFS（共有・先着順）'),
+        (SimulatorWithOwnerPriority, '所有者優先'),
+        (SimulatorWithOwnerPreemption, '所有者優先＋プリエンプト')
+    ]
+    
+    # Step: 3つのシナリオを1つの図に統合
+    print("\n\n")
+    print("=" * 80)
+    print("性能グループ別の参加者数推移グラフを作成中（3シナリオを統合表示）...")
+    print("=" * 80)
+    
+    fig, axes = plt.subplots(3, 1, figsize=(14, 14))
+    fig.suptitle('グループ別参加者数推移（3シナリオ比較）', fontsize=22, fontweight='bold', y=0.995)
+    
+    for idx, (scenario_class, scenario_name) in enumerate(scenarios_for_graphs):
+        ax = axes[idx]
+        participation_history = all_histories[scenario_name]['participation_history']
+        iterations = list(range(1, len(participation_history) + 1))
+        
+        # 各グループの参加者数推移を計算
+        low_counts = [sum(1 for uid in low_performance_users if participation_history[i][uid]) 
+                      for i in range(len(participation_history))]
+        mid_counts = [sum(1 for uid in mid_performance_users if participation_history[i][uid]) 
+                      for i in range(len(participation_history))]
+        high_counts = [sum(1 for uid in high_performance_users if participation_history[i][uid]) 
+                       for i in range(len(participation_history))]
+        
+        # 折れ線グラフを描画
+        ax.plot(iterations, low_counts, marker='o', label='低性能（0,1,2,9,10,11）',
+               color=group_colors['low'], linewidth=2.5, markersize=8)
+        ax.plot(iterations, mid_counts, marker='s', label='中性能（3,4,5,12,13,14）',
+               color=group_colors['mid'], linewidth=2.5, markersize=8)
+        ax.plot(iterations, high_counts, marker='^', label='高性能（6,7,8,15,16,17）',
+               color=group_colors['high'], linewidth=2.5, markersize=8)
+        
+        ax.set_xlabel('イテレーション', fontsize=16, fontweight='bold')
+        ax.set_ylabel('参加者数（人）', fontsize=16, fontweight='bold')
+        ax.set_title(f'{scenario_name}', fontsize=18, fontweight='bold')
+        ax.set_xticks(iterations)
+        ax.tick_params(axis='both', labelsize=14)
+        ax.legend(loc='best', fontsize=13, framealpha=0.95)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_ylim(-0.5, 6.5)
+    
+    plt.tight_layout()
+    output_path = os.path.join(OUTPUT_DIR_ITERATIVE, 'iterative_group_participation_combined.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print("  ✓ 統合グラフを生成: iterative_group_participation_combined.png")
     
     # ユーザー別参加状態推移表を作成
     print("\n\n")

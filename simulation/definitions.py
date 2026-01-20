@@ -73,10 +73,10 @@ class Task:
         self.preempted_others_count = 0  # このタスクが他のタスクをプリエンプトした回数
         
     def get_waiting_time(self):
-        """待ち時間 = 開始時刻 - 発生時刻"""
-        if self.start_time is None:
+        """レスポンス時間 = 完了時刻 - 発生時刻（到着から完了までの総時間）"""
+        if self.completion_time is None:
             return None
-        return self.start_time - self.arrival_time
+        return self.completion_time - self.arrival_time
 
 
 class User:
