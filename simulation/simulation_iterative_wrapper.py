@@ -495,7 +495,7 @@ def main():
     scenarios = [
         (SimulatorWithSharing, 'FCFS（共有・先着順）'),
         (SimulatorWithOwnerPriority, '所有者優先'),
-        (SimulatorWithOwnerPreemption, '所有者優先＋プリエンプト')
+        (SimulatorWithOwnerPreemption, 'プリエンプション')
     ]
     
     all_results = {}
@@ -635,7 +635,7 @@ def main():
     scenarios_for_graphs = [
         (SimulatorWithSharing, 'FCFS（共有・先着順）'),
         (SimulatorWithOwnerPriority, '所有者優先'),
-        (SimulatorWithOwnerPreemption, '所有者優先＋プリエンプト')
+        (SimulatorWithOwnerPreemption, 'プリエンプション')
     ]
     
     # Step: 3つのシナリオを1つの図に統合
@@ -644,8 +644,50 @@ def main():
     print("性能グループ別の参加者数推移グラフを作成中（3シナリオを統合表示）...")
     print("=" * 80)
     
-    fig, axes = plt.subplots(3, 1, figsize=(14, 14))
-    fig.suptitle('グループ別参加者数推移（3シナリオ比較）', fontsize=22, fontweight='bold', y=0.995)
+    # 各シナリオごとに個別のグラフを出力
+    for idx, (scenario_class, scenario_name) in enumerate(scenarios_for_graphs):
+        fig, ax = plt.subplots(figsize=(10, 6))
+        participation_history = all_histories[scenario_name]['participation_history']
+        iterations = list(range(1, len(participation_history) + 1))
+        
+        # 各グループの参加者数推移を計算
+        low_counts = [sum(1 for uid in low_performance_users if participation_history[i][uid]) 
+                      for i in range(len(participation_history))]
+        mid_counts = [sum(1 for uid in mid_performance_users if participation_history[i][uid]) 
+                      for i in range(len(participation_history))]
+        high_counts = [sum(1 for uid in high_performance_users if participation_history[i][uid]) 
+                       for i in range(len(participation_history))]
+        
+        # 折れ線グラフを描画
+        ax.plot(iterations, low_counts, marker='o', label='低性能ユーザー (0, 1, 2, 9, 10, 11)',
+               color=group_colors['low'], linewidth=2.5, markersize=8)
+        ax.plot(iterations, mid_counts, marker='s', label='中性能ユーザー (3, 4, 5, 12, 13, 14)',
+               color=group_colors['mid'], linewidth=2.5, markersize=8)
+        ax.plot(iterations, high_counts, marker='^', label='高性能ユーザー (6, 7, 8, 15, 16, 17)',
+               color=group_colors['high'], linewidth=2.5, markersize=8)
+        
+        ax.set_xlabel('イテレーション', fontsize=12, fontweight='bold')
+        ax.set_ylabel('参加者数（人）', fontsize=12, fontweight='bold')
+        ax.set_title(f'{scenario_name} - グループ別参加者数推移', fontsize=14, fontweight='bold')
+        ax.set_xticks(iterations)
+        ax.tick_params(axis='both', labelsize=10)
+        ax.legend(loc='best', fontsize=10, framealpha=0.95)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_ylim(-0.5, 6.5)
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        
+        plt.tight_layout()
+        # ファイル名を生成（シナリオ名をスラッシュなしにする）
+        safe_scenario_name = scenario_name.replace(' ', '_').replace('/', '_').replace('・', '_').replace('（', '').replace('）', '')
+        output_path = os.path.join(OUTPUT_DIR_ITERATIVE, f'group_participation_{safe_scenario_name}.png')
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"  ✓ グラフを生成: group_participation_{safe_scenario_name}.png")
+    
+    # 統合グラフも生成
+    fig, axes = plt.subplots(3, 1, figsize=(12, 14))
+    fig.suptitle('グループ別参加者数推移（3シナリオ比較）', fontsize=18, fontweight='bold', y=0.995)
     
     for idx, (scenario_class, scenario_name) in enumerate(scenarios_for_graphs):
         ax = axes[idx]
@@ -668,14 +710,15 @@ def main():
         ax.plot(iterations, high_counts, marker='^', label='高性能（6,7,8,15,16,17）',
                color=group_colors['high'], linewidth=2.5, markersize=8)
         
-        ax.set_xlabel('イテレーション', fontsize=16, fontweight='bold')
-        ax.set_ylabel('参加者数（人）', fontsize=16, fontweight='bold')
-        ax.set_title(f'{scenario_name}', fontsize=18, fontweight='bold')
+        ax.set_xlabel('イテレーション', fontsize=12, fontweight='bold')
+        ax.set_ylabel('参加者数（人）', fontsize=12, fontweight='bold')
+        ax.set_title(f'{scenario_name}', fontsize=13, fontweight='bold')
         ax.set_xticks(iterations)
-        ax.tick_params(axis='both', labelsize=14)
-        ax.legend(loc='best', fontsize=13, framealpha=0.95)
+        ax.tick_params(axis='both', labelsize=10)
+        ax.legend(loc='best', fontsize=10, framealpha=0.95)
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.set_ylim(-0.5, 6.5)
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     
     plt.tight_layout()
     output_path = os.path.join(OUTPUT_DIR_ITERATIVE, 'iterative_group_participation_combined.png')

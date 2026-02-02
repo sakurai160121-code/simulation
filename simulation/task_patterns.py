@@ -5,7 +5,7 @@
 
 import numpy as np
 import json
-from config import NUM_USERS, ARRIVAL_RATE, SIMULATION_TIME, TASK_SIZE_MEANS, BATCH_SIZES, EPOCHS, RANDOM_SEED
+import config
 
 
 def generate_task_arrivals():
@@ -13,20 +13,20 @@ def generate_task_arrivals():
     各ユーザーのタスク発生時刻を生成
     Returns: dict {user_id: [arrival_times]}
     """
-    np.random.seed(RANDOM_SEED)
+    np.random.seed(config.RANDOM_SEED)
     
     task_arrivals = {}
     
-    for user_id in range(NUM_USERS):
+    for user_id in range(config.NUM_USERS):
         arrivals = []
         current_time = 0.0
         
         while True:
             # ポアソン過程でタスク到着間隔を生成（指数分布）
-            inter_arrival = np.random.exponential(1.0 / ARRIVAL_RATE)
+            inter_arrival = np.random.exponential(1.0 / config.ARRIVAL_RATE)
             current_time += inter_arrival
             
-            if current_time > SIMULATION_TIME:
+            if current_time > config.SIMULATION_TIME:
                 break
             
             arrivals.append(float(current_time))
@@ -41,7 +41,7 @@ def generate_task_sizes(task_arrivals):
     各タスクのサイズ（仕事量）を指数分布で生成
     Returns: dict {user_id: {arrival_time: task_size}}
     """
-    np.random.seed(RANDOM_SEED + 1)  # 異なるシードでタスクサイズを生成
+    np.random.seed(config.RANDOM_SEED + 1)  # 異なるシードでタスクサイズを生成
     
     task_sizes = {}
     
@@ -49,9 +49,9 @@ def generate_task_sizes(task_arrivals):
         user_id = int(user_id_str)
         
         # ユーザーのタスクサイズ平均を取得
-        base_size = TASK_SIZE_MEANS[user_id]
-        batch_size = BATCH_SIZES.get(user_id, 1000)
-        epochs = EPOCHS.get(user_id, 1)
+        base_size = config.TASK_SIZE_MEANS[user_id]
+        batch_size = config.BATCH_SIZES.get(user_id, 1000)
+        epochs = config.EPOCHS.get(user_id, 1)
         mean_size = base_size * batch_size * epochs
         
         task_sizes[user_id_str] = {}
@@ -72,10 +72,10 @@ def save_patterns(filename="task_patterns.json"):
         "arrivals": task_arrivals,
         "sizes": task_sizes,
         "config": {
-            "num_users": NUM_USERS,
-            "arrival_rate": ARRIVAL_RATE,
-            "simulation_time": SIMULATION_TIME,
-            "random_seed": RANDOM_SEED,
+            "num_users": config.NUM_USERS,
+            "arrival_rate": config.ARRIVAL_RATE,
+            "simulation_time": config.SIMULATION_TIME,
+            "random_seed": config.RANDOM_SEED,
         }
     }
     
