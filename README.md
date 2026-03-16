@@ -15,6 +15,17 @@
 - 所有者優先
 - 所有者優先 + プリエンプティブ方式
 
+## 評価指標
+
+- 平均待ち時間（平均TAT）  
+  各タスクの `completion_time - arrival_time` の平均
+- タスク完了率  
+  観測時間内に完了したタスク割合
+- Makespan  
+  全完了タスクの最終完了時刻
+- 参加者数推移（反復最適化時）  
+  反復ごとの参加ユーザー数、および低/中/高性能グループ別参加数
+
 ## リポジトリ構成（主要部分）
 
 - `simulation/` : 実験コード本体
@@ -28,7 +39,16 @@
   - `run_multi_load_scenarios.py` : 負荷率別の4方式比較
   - `run_multi_load_with_participation.py` : 負荷率別の参加者数分析
 - `simulation/outputs/` : 実験生成物の保存先（画像・CSV・JSON）
-- `template.potx` : 発表資料テンプレート
+
+## 実験条件（デフォルト）
+
+- ユーザー数: 18
+- GPUティア: 9段階（各ティア2ユーザー）
+- 到着過程: ポアソン過程
+- 既定到着率: `ARRIVAL_RATE = 0.005`
+- シミュレーション時間: `SIMULATION_TIME = 86400`
+
+詳細は `simulation/config.py` を参照してください。
 
 ## 実行環境
 
@@ -91,6 +111,12 @@ python run_multi_load_with_participation.py
 - 反復最適化を負荷率ごとに実行
 - 低性能・中性能・高性能グループ別の参加人数推移を保存
 
+## 実行時の注意
+
+- スクリプトは `simulation/` を作業ディレクトリにして実行してください。
+- 既存の出力を残したまま再実行すると、画像やCSVが上書きされます。
+- 再現実験を行う場合は、`RANDOM_SEED` を固定したまま比較してください。
+
 ## 出力先
 
 - `simulation/outputs/basic_scenarios/` : 基本比較の図
@@ -112,9 +138,17 @@ python run_multi_load_with_participation.py
 
 設定変更時は、`task_patterns.json` を再生成してから比較することを推奨します。
 
+## よくある調整例
+
+- 負荷を全体的に上げたい  
+  `ARRIVAL_RATE` を上げる、または `BATCH_SIZES` / `EPOCHS` を増やす
+- ユーザー属性を変えたい  
+  `GPU_TIER_ASSIGNMENT` と `GPU_PERFORMANCE_LEVELS` を対応付けて編集
+- 実験時間を短縮したい  
+  `SIMULATION_TIME` を小さくする（比較時は全方式で同一値を使用）
+
 ## 備考
 
-- 既存の補助説明は `simulation/README_multi_scenarios.md` を参照
 - 生成物（`simulation/outputs/`、キャッシュ、ログなど）は `.gitignore` で除外設定済み
 
 ## ライセンス
