@@ -71,6 +71,33 @@
 pip install numpy pandas matplotlib
 ```
 
+`requirements.txt` を使う場合:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Web表示（ES・ポートフォリオ向け）
+
+ブラウザでシミュレーション実行と結果確認ができる簡易UIを用意しています。
+
+- 実装ファイル: `streamlit_app.py`
+- できること:
+  - シナリオ実行（3メニュー）
+  - 実行ログの表示
+  - 生成された画像/CSV/JSONのブラウザ表示
+
+起動方法（リポジトリのルートで実行）:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+起動後、ブラウザで以下の2タブを操作できます。
+
+- **シミュレーション実行**: 実行メニュー選択 → 実行
+- **結果ビュー**: 出力ファイル選択 → 画像・表・JSONの確認
+
 ## 実行手順
 
 以下は `simulation/` ディレクトリで実行します。
