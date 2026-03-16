@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+*.log
+simulation/output.txt
+simulation/output_log.txt
+
+# Generated task patterns
+task_patterns.json
+simulation/task_patterns.json
+
+# Generated results (large, reproducible)
+outputs/
+simulation/outputs/
+
+# Generated figures in simulation root
+simulation/*.png
+
+# Jupyter checkpoints
+.ipynb_checkpoints/

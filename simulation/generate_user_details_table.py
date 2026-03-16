@@ -27,6 +27,36 @@ from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemptio
 from results import ResultAnalyzer
 from config import NUM_USERS
 
+# 性能グループの定義
+PERFORMANCE_GROUPS = {
+    'low': [0, 1, 2, 9, 10, 11],      # 低性能ユーザー
+    'mid': [3, 4, 5, 12, 13, 14],     # 中性能ユーザー
+    'high': [6, 7, 8, 15, 16, 17]     # 高性能ユーザー
+}
+
+# GPUティアから性能グループへのマッピング
+# tier1, tier2, tier3 = 低性能
+# tier4, tier5, tier6 = 中性能
+# tier7, tier8, tier9 = 高性能
+GPU_TIER_TO_PERFORMANCE_GROUP = {
+    'tier1': 'low', 'tier2': 'low', 'tier3': 'low',
+    'tier4': 'mid', 'tier5': 'mid', 'tier6': 'mid',
+    'tier7': 'high', 'tier8': 'high', 'tier9': 'high'
+}
+
+# ユーザーIDからGPUティアへのマッピング
+USER_TO_GPU_TIER = {
+    0: 'tier1', 9: 'tier1',
+    1: 'tier2', 10: 'tier2',
+    2: 'tier3', 11: 'tier3',
+    3: 'tier4', 12: 'tier4',
+    4: 'tier5', 13: 'tier5',
+    5: 'tier6', 14: 'tier6',
+    6: 'tier7', 15: 'tier7',
+    7: 'tier8', 16: 'tier8',
+    8: 'tier9', 17: 'tier9'
+}
+
 def run_all_simulations():
     """4つの基本シナリオを実行し、ユーザー別統計を取得"""
     
@@ -43,6 +73,7 @@ def run_all_simulations():
     print("="*80)
     
     all_user_stats = {}
+    all_tasks_dict = {}
     
     # シナリオ1: 非共有
     print("\n【非共有】")
@@ -50,6 +81,7 @@ def run_all_simulations():
     tasks_no_sharing = sim.run()
     analyzer = ResultAnalyzer(tasks_no_sharing, NUM_USERS, mode="no_sharing")
     all_user_stats["非共有"] = analyzer.get_user_statistics()
+    all_tasks_dict["非共有"] = tasks_no_sharing
     
     # シナリオ2: FCFS（先着順）
     print("\n【FCFS（先着順）】")
@@ -57,6 +89,7 @@ def run_all_simulations():
     tasks_with_sharing = sim.run()
     analyzer = ResultAnalyzer(tasks_with_sharing, NUM_USERS, mode="with_sharing")
     all_user_stats["FCFS（先着順）"] = analyzer.get_user_statistics()
+    all_tasks_dict["FCFS（先着順）"] = tasks_with_sharing
     
     # シナリオ3: 所有者優先
     print("\n【所有者優先】")
@@ -64,15 +97,17 @@ def run_all_simulations():
     tasks_owner_priority = sim.run()
     analyzer = ResultAnalyzer(tasks_owner_priority, NUM_USERS, mode="with_sharing_owner_priority")
     all_user_stats["所有者優先"] = analyzer.get_user_statistics()
+    all_tasks_dict["所有者優先"] = tasks_owner_priority
     
-    # シナリオ4: プリエンプション
-    print("\n【プリエンプション】")
+    # シナリオ4: プリエンプティブ方式
+        print("\n【プリエンプティブ方式】")
     sim = SimulatorWithOwnerPreemption(task_patterns=task_patterns)
     tasks_owner_preemption = sim.run()
     analyzer = ResultAnalyzer(tasks_owner_preemption, NUM_USERS, mode="with_sharing_owner_preemption")
-    all_user_stats["プリエンプション"] = analyzer.get_user_statistics()
+        all_user_stats["プリエンプティブ方式"] = analyzer.get_user_statistics()
+        all_tasks_dict["プリエンプティブ方式"] = tasks_owner_preemption
     
-    return all_user_stats
+    return all_user_stats, all_tasks_dict
 
 def create_user_table(all_user_stats):
     """ユーザー詳細表を作成・表示"""
@@ -87,7 +122,7 @@ def create_user_table(all_user_stats):
     for user_id in range(9):  # ユーザー0～8
         row = {"ユーザーID": f"ユーザー{user_id}"}
         
-        for scenario_name in ["非共有", "FCFS（先着順）", "所有者優先", "プリエンプション"]:
+            for scenario_name in ["非共有", "FCFS（先着順）", "所有者優先", "プリエンプティブ方式"]:
             user_stats_list = all_user_stats[scenario_name]
             user_stat = user_stats_list[user_id]
             avg_wait = user_stat['avg_waiting_time']
@@ -114,7 +149,7 @@ def create_user_table(all_user_stats):
     for user_id in range(NUM_USERS):
         row = {"ユーザーID": f"ユーザー{user_id}"}
         
-        for scenario_name in ["非共有", "FCFS（先着順）", "所有者優先", "プリエンプション"]:
+            for scenario_name in ["非共有", "FCFS（先着順）", "所有者優先", "プリエンプティブ方式"]:
             user_stats_list = all_user_stats[scenario_name]
             user_stat = user_stats_list[user_id]
             avg_wait = user_stat['avg_waiting_time']
@@ -190,13 +225,112 @@ def save_table_as_image(df, filename):
             cell.set_facecolor(colors[color_idx])
             cell.set_linewidth(0.8)
     
-    # タイトルを追加
-    fig.suptitle('ユーザー0～17の平均TAT詳細', fontsize=28, fontweight='bold', y=0.98)
-    
     # PNG保存
     plt.tight_layout()
     plt.savefig(filename, dpi=150, bbox_inches='tight', facecolor='white', pad_inches=0.1)
     print(f"✓ PNG画像を保存: {filename}")
+    plt.close()
+
+def calculate_group_task_execution_ratio(tasks, user_group):
+    """
+    指定された性能グループのGPUが処理したタスク処理量割合を計算
+    
+    Args:
+        tasks: シミュレーション結果のタスクリスト
+        user_group: この引数は使用しない（互換性のため残す）
+    
+    Returns:
+        グループ内のGPUが処理したタスクの総仕事量（TFLOPs）の割合
+    """
+    # 各性能グループが処理した総仕事量
+    group_work = {'low': 0, 'mid': 0, 'high': 0}
+    
+    for task in tasks:
+        # タスクの総仕事量（TFLOPs）を取得
+        if task.total_work is not None and task.assigned_gpu is not None:
+            # 割り当てられたGPUのIDからユーザーIDを取得
+            gpu_id = task.assigned_gpu.gpu_id
+            
+            # ユーザーIDからGPUティアを取得
+            gpu_tier = USER_TO_GPU_TIER.get(gpu_id)
+            
+            if gpu_tier:
+                # GPUティアから性能グループを判定
+                performance_group = GPU_TIER_TO_PERFORMANCE_GROUP.get(gpu_tier)
+                
+                if performance_group:
+                    group_work[performance_group] += task.total_work
+    
+    # 総仕事量を計算
+    total_work = sum(group_work.values())
+    
+    # 指定されたグループの割合を返す（user_groupは実際には 'low', 'mid', 'high' のいずれか）
+    # この関数の呼び出し方を変更する必要がある
+    return group_work, total_work
+
+def create_performance_group_pie_charts(all_tasks_dict):
+    """
+    各シナリオの性能グループ別タスク実行割合を円グラフで表示
+    
+    Args:
+        all_tasks_dict: シナリオ名をキーとしたタスクリストの辞書
+    """
+    
+    print("\n" + "="*80)
+    print("性能グループ別タスク処理量割合（円グラフ）")
+    print("="*80)
+    
+    # 色の定義（表と同じ色を使用）
+    colors = ['#B1C4F8', '#F5BF8D', '#FFB3B3']  # 低性能(青), 中性能(オレンジ), 高性能(赤)
+    group_names = ['低性能', '中性能', '高性能']
+    group_keys = ['low', 'mid', 'high']
+    
+    # 4つのシナリオの円グラフを2x2で配置
+    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+    axes = axes.flatten()
+    
+    scenario_names = list(all_tasks_dict.keys())
+    
+    for idx, scenario_name in enumerate(scenario_names):
+        ax = axes[idx]
+        tasks = all_tasks_dict[scenario_name]
+        
+        # 各グループのタスク実行割合を計算
+        group_work, total_work = calculate_group_task_execution_ratio(tasks, None)
+        
+        # パーセンテージに変換
+        group_ratios = []
+        for group_key in group_keys:
+            ratio = (group_work[group_key] / total_work * 100) if total_work > 0 else 0
+            group_ratios.append(ratio)
+        
+        # 円グラフを作成
+        wedges, texts, autotexts = ax.pie(
+            group_ratios,
+            labels=group_names,
+            colors=colors,
+            autopct='%1.1f%%',
+            startangle=90,
+            textprops={'fontsize': 18, 'weight': 'bold'}
+        )
+        
+        # パーセンテージテキストの色を黒に、フォントサイズを18に
+        for autotext in autotexts:
+            autotext.set_color('black')
+            autotext.set_fontsize(18)
+        
+        # コンソールに数値を出力
+        print(f"\n【{scenario_name}】")
+        for group_name, ratio in zip(group_names, group_ratios):
+            print(f"  {group_name}: {ratio:.1f}%")
+    
+    # レイアウト調整
+    plt.tight_layout()
+    
+    # PNG保存
+    filename = "performance_group_task_execution_ratio.png"
+    plt.savefig(filename, dpi=150, bbox_inches='tight', facecolor='white')
+    print(f"\n✓ 円グラフを保存: {filename}")
     plt.close()
 
 def main():
@@ -209,10 +343,13 @@ def main():
     
     try:
         # すべてのシミュレーションを実行
-        all_user_stats = run_all_simulations()
+        all_user_stats, all_tasks_dict = run_all_simulations()
         
         # ユーザー詳細表を作成・表示
         create_user_table(all_user_stats)
+        
+        # 性能グループ別タスク実行割合の円グラフを作成
+        create_performance_group_pie_charts(all_tasks_dict)
         
         end_time = datetime.now()
         elapsed = end_time - start_time

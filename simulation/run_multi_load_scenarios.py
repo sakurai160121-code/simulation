@@ -179,16 +179,16 @@ def run_simulation_at_load(load_rate, seed_offset):
     group_results["high"]["所有者優先"] = compute_group_avg_waiting_time(tasks, HIGH_PERF_USERS)
     print(f"    → 平均TAT: {stats['avg_waiting_time']:.2f}秒")
     
-    # シナリオ4: プリエンプション
-    print("\n  プリエンプション...")
+    # シナリオ4: プリエンプティブ方式
+    print("\n  プリエンプティブ方式...")
     sim = SimulatorWithOwnerPreemption(task_patterns=task_patterns)
     tasks = sim.run()
     analyzer = ResultAnalyzer(tasks, NUM_USERS, mode="with_sharing_owner_preemption")
     stats = analyzer.get_system_statistics()
-    results["プリエンプション"] = stats['avg_waiting_time']
-    group_results["low"]["プリエンプション"] = compute_group_avg_waiting_time(tasks, LOW_PERF_USERS)
-    group_results["mid"]["プリエンプション"] = compute_group_avg_waiting_time(tasks, MID_PERF_USERS)
-    group_results["high"]["プリエンプション"] = compute_group_avg_waiting_time(tasks, HIGH_PERF_USERS)
+    results["プリエンプティブ方式"] = stats['avg_waiting_time']
+    group_results["low"]["プリエンプティブ方式"] = compute_group_avg_waiting_time(tasks, LOW_PERF_USERS)
+    group_results["mid"]["プリエンプティブ方式"] = compute_group_avg_waiting_time(tasks, MID_PERF_USERS)
+    group_results["high"]["プリエンプティブ方式"] = compute_group_avg_waiting_time(tasks, HIGH_PERF_USERS)
     print(f"    → 平均TAT: {stats['avg_waiting_time']:.2f}秒")
     
     return results, group_results, actual_load_rate
@@ -202,19 +202,19 @@ def main():
     print("="*80)
     
     # テスト対象の負荷率リスト
-    target_load_rates = [0.1, 0.3, 0.5, 0.7, 0.9]
+    target_load_rates = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     actual_load_rates = []
     # 結果を格納する辞書
     scenario_results = {
         "共有なし": [],
         "FCFS": [],
         "所有者優先": [],
-        "プリエンプション": []
+        "プリエンプティブ方式": []
     }
     group_scenario_results = {
-        "low": {"FCFS": [], "所有者優先": [], "プリエンプション": []},
-        "mid": {"FCFS": [], "所有者優先": [], "プリエンプション": []},
-        "high": {"共有なし": [], "FCFS": [], "所有者優先": [], "プリエンプション": []}
+        "low": {"共有なし": [], "FCFS": [], "所有者優先": [], "プリエンプティブ方式": []},
+        "mid": {"共有なし": [], "FCFS": [], "所有者優先": [], "プリエンプティブ方式": []},
+        "high": {"共有なし": [], "FCFS": [], "所有者優先": [], "プリエンプティブ方式": []}
     }
     
     try:
@@ -229,11 +229,8 @@ def main():
             
             # グループ別結果を集計
             for group in ["low", "mid", "high"]:
-                for scenario in ["FCFS", "所有者優先", "プリエンプション"]:
+                for scenario in ["共有なし", "FCFS", "所有者優先", "プリエンプティブ方式"]:
                     group_scenario_results[group][scenario].append(group_results[group][scenario])
-            
-            # 高性能のみ「共有なし」も追加
-            group_scenario_results["high"]["共有なし"].append(group_results["high"]["共有なし"])
         
         # グラフ生成
         print("\n" + "="*80)
@@ -247,25 +244,27 @@ def main():
             ("高性能GPU", "high", "high")
         ]
         
-        scenarios = ["FCFS", "所有者優先", "プリエンプション"]
+        scenarios = ["FCFS", "所有者優先", "プリエンプティブ方式"]
         
         # シナリオごとの色設定
         scenario_colors = {
             "共有なし": "#9467bd",
             "FCFS": "#ff7f0e",
             "所有者優先": "#1f77b4",
-            "プリエンプション": "#2ca02c"
+            "プリエンプティブ方式": "#2ca02c"
+        }
+        scenario_markers = {
+            "共有なし": "o",
+            "FCFS": "s",
+            "所有者優先": "^",
+            "プリエンプティブ方式": "D"
         }
         
         # 各グループごとに個別のグラフを生成して保存
         for group_name, group_key, file_suffix in groups:
             fig, ax = plt.subplots(figsize=(8, 6))
             
-            # 高性能のみ「共有なし」も表示
-            if group_key == "high":
-                scenarios_to_plot = ["共有なし", "FCFS", "所有者優先", "プリエンプション"]
-            else:
-                scenarios_to_plot = ["FCFS", "所有者優先", "プリエンプション"]
+            scenarios_to_plot = ["共有なし", "FCFS", "所有者優先", "プリエンプティブ方式"]
             
             for scenario in scenarios_to_plot:
                 if group_key is None:
@@ -275,16 +274,22 @@ def main():
                     # 性能グループ別
                     data = group_scenario_results[group_key][scenario]
                 
-                ax.plot(target_load_rates, data, 
-                       marker='o', label=scenario, linewidth=2.5, markersize=8,
-                       color=scenario_colors[scenario])
+                ax.plot(
+                    target_load_rates,
+                    data,
+                    marker=scenario_markers[scenario],
+                    label=scenario,
+                    linewidth=2.5,
+                    markersize=8,
+                    color=scenario_colors[scenario],
+                    linestyle='-'
+                )
             
-            ax.set_xlabel('システム負荷率', fontsize=12, fontweight='bold')
-            ax.set_ylabel('平均TAT（秒）', fontsize=12, fontweight='bold')
-            ax.set_title(group_name, fontsize=14, fontweight='bold')
+            ax.set_xlabel('システム負荷率', fontsize=18, fontweight='bold')
+            ax.set_ylabel('平均TAT（秒）', fontsize=18, fontweight='bold')
             ax.set_xticks(target_load_rates)
-            ax.tick_params(labelsize=10)
-            ax.legend(fontsize=10, loc='upper left')
+            ax.set_yscale('log', base=10)
+            ax.tick_params(labelsize=18)
             ax.grid(True, alpha=0.3, linestyle='--')
             
             plt.tight_layout()
@@ -312,7 +317,7 @@ def main():
             "負荷率（実測）": actual_load_rates,
             "FCFS": scenario_results["FCFS"],
             "所有者優先": scenario_results["所有者優先"],
-            "プリエンプション": scenario_results["プリエンプション"]
+            "プリエンプティブ方式": scenario_results["プリエンプティブ方式"]
         })
         
         csv_path = os.path.join(OUTPUT_DIR, 'load_rate_results.csv')

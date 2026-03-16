@@ -225,6 +225,11 @@ class IterativeOptimizer:
     
     def run_iterative_optimization(self, scenario_class, scenario_name, max_iterations=10, initial_participation=None):
         """反復最適化実行（固定10イテレーション実行）"""
+        # タスクパターンが空の場合は再生成して読み込み
+        if not self.task_patterns:
+            save_patterns()
+            self.task_patterns = load_patterns()
+        
         print("=" * 80)
         print(f"反復型シミュレーション開始：{scenario_name}")
         print("=" * 80)
@@ -474,8 +479,6 @@ def _save_flow_table(scenario_name, participation_history, performance_history, 
     table.auto_set_font_size(False)
     table.set_fontsize(8)
     table.scale(1.1, 1.2)
-    ax.set_title(f"{scenario_name}：参加/不参加フローと平均待ち時間", fontsize=12, fontweight='bold', pad=10)
-
     slug = _scenario_slug(scenario_name)
     filename = f"flow_table_{slug}.png"
     plt.tight_layout()
@@ -486,16 +489,15 @@ def _save_flow_table(scenario_name, participation_history, performance_history, 
 
 
 def main():
-    # タスクパターン読み込み
-    if not os.path.exists("task_patterns.json"):
-        print("タスクパターンを生成中...")
-        save_patterns()
+    # タスクパターン読み込み（現在のconfigで必ず再生成）
+    print("タスクパターンを生成中...")
+    save_patterns()
     patterns = load_patterns()
     
     scenarios = [
         (SimulatorWithSharing, 'FCFS（共有・先着順）'),
         (SimulatorWithOwnerPriority, '所有者優先'),
-        (SimulatorWithOwnerPreemption, 'プリエンプション')
+        (SimulatorWithOwnerPreemption, 'プリエンプティブ方式')
     ]
     
     all_results = {}
@@ -596,17 +598,25 @@ def main():
     print("=" * 80)
     
     plt.figure(figsize=(12, 6))
-    for scenario_name in [s[1] for s in scenarios]:
-        history = all_histories[scenario_name]['participant_count_history']
-        iterations = list(range(1, len(history) + 1))
-        plt.plot(iterations, history, marker='o', linewidth=2, markersize=8, label=scenario_name)
+    scenario_names = [s[1] for s in scenarios]
+    histories = [all_histories[name]['participant_count_history'] for name in scenario_names]
+    iterations = list(range(1, len(histories[0]) + 1))
+    x_positions = np.arange(len(iterations))
+    bottoms = np.zeros(len(iterations))
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+
+    for idx, scenario_name in enumerate(scenario_names):
+        history = histories[idx]
+        plt.bar(x_positions, history, bottom=bottoms, label=scenario_name, color=colors[idx % len(colors)])
+        bottoms += np.array(history)
     
-    plt.xlabel('イテレーション', fontsize=12)
-    plt.ylabel('参加者数 (人数)', fontsize=12)
-    plt.title('各シナリオの参加者数推移', fontsize=14, fontweight='bold')
-    plt.legend(fontsize=10)
+    plt.xlabel('イテレーション', fontsize=18)
+    plt.ylabel('参加者数 (人数)', fontsize=18)
+    plt.xticks(x_positions, iterations)
+    plt.legend(fontsize=18)
     plt.grid(True, alpha=0.3)
     ax = plt.gca()
+    ax.tick_params(axis='both', labelsize=18)
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     plt.tight_layout()
     output_path = os.path.join(OUTPUT_DIR_ITERATIVE, 'participant_count_history.png')
@@ -627,7 +637,7 @@ def main():
     # グループの色
     group_colors = {
         'low': '#0d47a1',      # 濃い青
-        'mid': '#ffed4e',      # 明るい黄色
+        'mid': '#ff8c00',      # オレンジ
         'high': '#d62728'      # 濃い赤
     }
     
@@ -635,7 +645,7 @@ def main():
     scenarios_for_graphs = [
         (SimulatorWithSharing, 'FCFS（共有・先着順）'),
         (SimulatorWithOwnerPriority, '所有者優先'),
-        (SimulatorWithOwnerPreemption, 'プリエンプション')
+        (SimulatorWithOwnerPreemption, 'プリエンプティブ方式')
     ]
     
     # Step: 3つのシナリオを1つの図に統合
@@ -658,22 +668,23 @@ def main():
         high_counts = [sum(1 for uid in high_performance_users if participation_history[i][uid]) 
                        for i in range(len(participation_history))]
         
-        # 折れ線グラフを描画
-        ax.plot(iterations, low_counts, marker='o', label='低性能ユーザー (0, 1, 2, 9, 10, 11)',
-               color=group_colors['low'], linewidth=2.5, markersize=8)
-        ax.plot(iterations, mid_counts, marker='s', label='中性能ユーザー (3, 4, 5, 12, 13, 14)',
-               color=group_colors['mid'], linewidth=2.5, markersize=8)
-        ax.plot(iterations, high_counts, marker='^', label='高性能ユーザー (6, 7, 8, 15, 16, 17)',
-               color=group_colors['high'], linewidth=2.5, markersize=8)
+        # 積み上げ棒グラフを描画
+        x_positions = np.arange(len(iterations))
+        low_vals = np.array(low_counts)
+        mid_vals = np.array(mid_counts)
+        high_vals = np.array(high_counts)
+        ax.bar(x_positions, low_vals, label='低性能ユーザー (0, 1, 2, 9, 10, 11)', color=group_colors['low'])
+        ax.bar(x_positions, mid_vals, bottom=low_vals, label='中性能ユーザー (3, 4, 5, 12, 13, 14)', color=group_colors['mid'])
+        ax.bar(x_positions, high_vals, bottom=low_vals + mid_vals, label='高性能ユーザー (6, 7, 8, 15, 16, 17)', color=group_colors['high'])
         
-        ax.set_xlabel('イテレーション', fontsize=12, fontweight='bold')
-        ax.set_ylabel('参加者数（人）', fontsize=12, fontweight='bold')
-        ax.set_title(f'{scenario_name} - グループ別参加者数推移', fontsize=14, fontweight='bold')
-        ax.set_xticks(iterations)
-        ax.tick_params(axis='both', labelsize=10)
-        ax.legend(loc='best', fontsize=10, framealpha=0.95)
+        ax.set_xlabel('イテレーション', fontsize=20, fontweight='bold')
+        ax.set_ylabel('参加者数（人）', fontsize=20, fontweight='bold')
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(iterations)
+        ax.tick_params(axis='both', labelsize=20)
+        ax.legend(loc='best', fontsize=12, framealpha=0.95)
         ax.grid(True, alpha=0.3, linestyle='--')
-        ax.set_ylim(-0.5, 6.5)
+        ax.set_ylim(-0.5, 18.5)
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
         plt.tight_layout()
@@ -687,8 +698,6 @@ def main():
     
     # 統合グラフも生成
     fig, axes = plt.subplots(3, 1, figsize=(12, 14))
-    fig.suptitle('グループ別参加者数推移（3シナリオ比較）', fontsize=18, fontweight='bold', y=0.995)
-    
     for idx, (scenario_class, scenario_name) in enumerate(scenarios_for_graphs):
         ax = axes[idx]
         participation_history = all_histories[scenario_name]['participation_history']
@@ -710,12 +719,11 @@ def main():
         ax.plot(iterations, high_counts, marker='^', label='高性能（6,7,8,15,16,17）',
                color=group_colors['high'], linewidth=2.5, markersize=8)
         
-        ax.set_xlabel('イテレーション', fontsize=12, fontweight='bold')
-        ax.set_ylabel('参加者数（人）', fontsize=12, fontweight='bold')
-        ax.set_title(f'{scenario_name}', fontsize=13, fontweight='bold')
+        ax.set_xlabel('イテレーション', fontsize=20, fontweight='bold')
+        ax.set_ylabel('参加者数（人）', fontsize=20, fontweight='bold')
         ax.set_xticks(iterations)
-        ax.tick_params(axis='both', labelsize=10)
-        ax.legend(loc='best', fontsize=10, framealpha=0.95)
+        ax.tick_params(axis='both', labelsize=20)
+        ax.legend(loc='best', fontsize=12, framealpha=0.95)
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.set_ylim(-0.5, 6.5)
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))

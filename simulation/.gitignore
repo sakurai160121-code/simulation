@@ -1,1 +1,13 @@
+# 親ディレクトリの .gitignore を基本利用
+# 必要ならこのディレクトリ固有の除外をここに追記
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Generated local outputs
+outputs/
+output.txt
+output_log.txt
+task_patterns.json
 *.png

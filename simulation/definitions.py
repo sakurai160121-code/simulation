@@ -66,7 +66,7 @@ class Task:
         self.deadline = None
         self.failed = False
         
-        # 割り込み・プリエンプション統計
+        # 割り込み・プリエンプティブ方式統計
         self.interrupted_by = set()  # このタスクを割り込んだタスクIDのセット
         self.preempted_count = 0  # このタスクが実行中にプリエンプトされた回数
         self.interrupted_others = set()  # このタスクが割り込んだタスクIDのセット

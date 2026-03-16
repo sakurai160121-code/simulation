@@ -117,7 +117,7 @@ class ResultAnalyzer:
         elif self.mode == "with_sharing_owner_priority":
             mode_title = "【共有あり・所有者優先】"
         elif self.mode == "with_sharing_owner_preemption":
-            mode_title = "【共有あり・所有者優先・プリエンプト】"
+            mode_title = "【共有あり・所有者優先・プリエンプティブ方式】"
         else:
             mode_title = "【シミュレーション結果】"
         
@@ -234,21 +234,18 @@ class ResultAnalyzer:
         elif self.mode == "with_sharing_owner_priority":
             mode_title = "共有あり・所有者優先"
         elif self.mode == "with_sharing_owner_preemption":
-            mode_title = "共有あり・所有者優先・プリエンプト"
+            mode_title = "共有あり・所有者優先・プリエンプティブ方式"
         else:
             mode_title = "シミュレーション結果"
         
         # 2x2のサブプロットを作成
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-        fig.suptitle(f"シミュレーション結果（{mode_title}）", fontsize=16, fontweight='bold')
-        
         # グラフ1: ユーザー別完了率
         ax1 = axes[0][0]
         ax1.bar(df['user_id'].astype(int), df['completion_rate_cutoff'], color='steelblue', alpha=0.7)
         ax1.axhline(y=df['completion_rate_cutoff'].mean(), color='red', linestyle='--', label=f'平均: {df["completion_rate_cutoff"].mean():.2f}%')
         ax1.set_xlabel('ユーザーID')
         ax1.set_ylabel('完了率(%)')
-        ax1.set_title('ユーザー別タスク完了率（3600秒時点）')
         ax1.set_xticks(range(0, self.num_users, 2))
         ax1.set_xticklabels(range(0, self.num_users, 2))
         ax1.set_ylim([0, 101])
@@ -278,7 +275,6 @@ class ResultAnalyzer:
             uid = df.iloc[i]['user_id']
             wait = df.iloc[i]['avg_waiting_time']
             col2_data.append([f"{int(uid)}", f"{wait:.1f}"])
-        
         # 平均行を追加
         col1_data.append(['', ''])
         col2_data.append(['平均', f"{mean_wait:.1f}"])
@@ -310,8 +306,6 @@ class ResultAnalyzer:
             cell.set_facecolor('#E7E6E6')
             cell.set_text_props(weight='bold')
         
-        ax2.set_title('ユーザー別平均待ち時間', fontsize=12, fontweight='bold', pad=20)
-        
         # グラフ3: ユーザー別総仕事量 (TFLOPs) - 自分/他人のGPU別に色分け
         ax3 = axes[1][0]
         x_pos = df['user_id'].astype(int)
@@ -319,7 +313,6 @@ class ResultAnalyzer:
         ax3.bar(x_pos, df['other_gpu_work'], bottom=df['own_gpu_work'], color='orange', alpha=0.8, label='他人のGPU')
         ax3.set_xlabel('ユーザーID')
         ax3.set_ylabel('総仕事量 (TFLOPs)')
-        ax3.set_title('ユーザー別総仕事量（GPU別）')
         ax3.set_xticks(range(0, self.num_users, 2))
         ax3.set_xticklabels(range(0, self.num_users, 2))
         ax3.legend()
@@ -377,8 +370,6 @@ class ResultAnalyzer:
             cell = table[(last_row, j)]
             cell.set_facecolor('#E7E6E6')
             cell.set_text_props(weight='bold')
-        
-        ax4.set_title('ユーザー別全タスク完了時刻', fontsize=12, fontweight='bold', pad=20)
         
         plt.tight_layout()
         

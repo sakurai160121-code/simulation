@@ -10,10 +10,10 @@ import sys
 from datetime import datetime
 
 # 出力ディレクトリの設定
-OUTPUT_DIR_BASE = './outputs'
-OUTPUT_DIR_BASIC = './outputs/basic_scenarios'
-OUTPUT_DIR_USER_COMP = './outputs/user_comparisons'
-OUTPUT_DIR_TABLES = './outputs/tables'
+OUTPUT_DIR_BASE = './outputs/scenario1'
+OUTPUT_DIR_BASIC = './outputs/scenario1/basic_scenarios'
+OUTPUT_DIR_USER_COMP = './outputs/scenario1/user_comparisons'
+OUTPUT_DIR_TABLES = './outputs/scenario1/tables'
 
 # 出力ディレクトリを作成
 for dir_path in [OUTPUT_DIR_BASE, OUTPUT_DIR_BASIC, OUTPUT_DIR_USER_COMP, OUTPUT_DIR_TABLES]:
@@ -50,7 +50,7 @@ def run_base_scenarios():
         ("simulation_no_sharing", "共有なし", "no_sharing"),
         ("simulation_with_sharing", "FCFS（先着順）", "with_sharing"),
         ("simulation_with_sharing_owner_priority", "所有者優先", "with_sharing_owner_priority"),
-        ("simulation_with_sharing_owner_preemption", "所有者優先＋プリエンプション", "with_sharing_owner_preemption")
+        ("simulation_with_sharing_owner_preemption", "所有者優先＋プリエンプティブ方式", "with_sharing_owner_preemption")
     ]
     
     results = {}
@@ -140,7 +140,7 @@ def generate_graphs(all_tasks):
         "no_sharing": "共有なし",
         "with_sharing": "FCFS（先着順）",
         "with_sharing_owner_priority": "所有者優先",
-        "with_sharing_owner_preemption": "所有者優先＋プリエンプション"
+        "with_sharing_owner_preemption": "所有者優先＋プリエンプティブ方式"
     }
     
     # Step1: シナリオ別グラフを生成
@@ -169,8 +169,6 @@ def generate_graphs(all_tasks):
         ax1 = fig.add_subplot(gs[0, 0])
         ax2 = fig.add_subplot(gs[0, 1])
         ax3 = fig.add_subplot(gs[1, :])
-        
-        fig.suptitle(f"ユーザー{user_id}の各シナリオ比較", fontsize=14, fontweight='bold')
         
         # グラフ用データを準備
         scenario_names = []
@@ -210,7 +208,6 @@ def generate_graphs(all_tasks):
         bars1 = ax1.bar(range(len(scenario_names)), avg_wait_times, color=colors, alpha=0.7)
         ax1.set_xlabel('シナリオ', fontsize=10)
         ax1.set_ylabel('平均待ち時間（秒）', fontsize=10)
-        ax1.set_title('平均待ち時間の比較', fontsize=11, fontweight='bold')
         ax1.set_xticks(range(len(scenario_names)))
         ax1.set_xticklabels(scenario_names, rotation=15, ha='right', fontsize=9)
         ax1.grid(axis='y', alpha=0.3)
@@ -224,7 +221,6 @@ def generate_graphs(all_tasks):
         bars2 = ax2.bar(range(len(scenario_names)), completion_times, color=colors, alpha=0.7)
         ax2.set_xlabel('シナリオ', fontsize=10)
         ax2.set_ylabel('全タスク完了時刻（秒）', fontsize=10)
-        ax2.set_title('全タスク完了時刻の比較', fontsize=11, fontweight='bold')
         ax2.set_xticks(range(len(scenario_names)))
         ax2.set_xticklabels(scenario_names, rotation=15, ha='right', fontsize=9)
         ax2.grid(axis='y', alpha=0.3)
@@ -234,7 +230,7 @@ def generate_graphs(all_tasks):
             ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(completion_times)*0.02,
                     f'{val:.1f}秒', ha='center', va='bottom', fontsize=8)
         
-        # 表: 他人GPU使用割合・割り込み・プリエンプション統計（下部全体）
+        # 表: 他人GPU使用割合・割り込み・プリエンプティブ方式統計（下部全体）
         ax3.axis('tight')
         ax3.axis('off')
         
@@ -264,8 +260,6 @@ def generate_graphs(all_tasks):
                 cell.set_facecolor(colors[i-1] if i <= len(colors) else '#CCCCCC')
                 cell.set_alpha(0.3)
         
-        ax3.set_title('GPU使用統計', fontsize=10, fontweight='bold', pad=20)
-        
         filename = f'user_comparison_{user_id:02d}.png'
         output_path = os.path.join(OUTPUT_DIR_USER_COMP, filename)
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
@@ -281,7 +275,7 @@ def generate_graphs(all_tasks):
     print("-"*80)
     
     target_users_table = [0, 1, 2]  # 表形式出力用（0～2のみに変更）
-    scenario_labels = ["共有なし", "FCFS\n(先着順)", "所有者\n優先", "所有者優先+\nプリエンプト"]
+    scenario_labels = ["共有なし", "FCFS\n(先着順)", "所有者\n優先", "所有者優先+\nプリエンプティブ方式"]
     scenario_modes = ["no_sharing", "with_sharing", "with_sharing_owner_priority", "with_sharing_owner_preemption"]
     
     # ユーザー0～2の表形式出力
@@ -316,8 +310,6 @@ def generate_graphs(all_tasks):
         for j in range(len(scenario_labels) + 1):
             if i % 2 == 0:
                 table[(i, j)].set_facecolor('#f0f0f0')
-    
-    ax.set_title('ユーザー0～2の平均待ち時間詳細', fontsize=18, fontweight='bold', pad=20)
     
     plt.tight_layout()
     output_path = os.path.join(OUTPUT_DIR_TABLES, 'scenario_table_users_0_to_2.png')
@@ -360,7 +352,7 @@ def generate_graphs(all_tasks):
     fig, ax = plt.subplots(figsize=(12, 7))
     
     target_users_line = [3, 4, 5, 6, 7, 8]  # 折れ線グラフ用
-    scenario_names = ["共有なし", "FCFS", "所有者優先", "所有者優先+\nプリエンプト"]
+    scenario_names = ["共有なし", "FCFS", "所有者優先", "所有者優先+\nプリエンプティブ方式"]
     scenario_modes = ["no_sharing", "with_sharing", "with_sharing_owner_priority", "with_sharing_owner_preemption"]
     
     # 各ユーザーのデータを折れ線でプロット
@@ -376,13 +368,12 @@ def generate_graphs(all_tasks):
         ax.plot(range(len(scenario_names)), avg_wait_values, marker='o', label=f'ユーザー{user_id}', 
                color=line_color, linewidth=2.5, markersize=8)
     
-    ax.set_xlabel('シナリオ', fontsize=20, fontweight='bold')
-    ax.set_ylabel('平均待ち時間（秒）', fontsize=20, fontweight='bold')
-    ax.set_title('ユーザー3～8のシナリオ別平均待ち時間推移', fontsize=20, fontweight='bold')
+    ax.set_xlabel('シナリオ', fontsize=18, fontweight='bold')
+    ax.set_ylabel('平均待ち時間（秒）', fontsize=18, fontweight='bold')
     ax.set_xticks(range(len(scenario_names)))
-    ax.set_xticklabels(scenario_names, fontsize=20)
-    ax.tick_params(axis='y', labelsize=20)
-    ax.legend(loc='upper right', fontsize=14, ncol=2)
+    ax.set_xticklabels(scenario_names, fontsize=18)
+    ax.tick_params(axis='y', labelsize=18)
+    ax.legend(loc='upper right', fontsize=12, ncol=2)
     ax.grid(True, alpha=0.3, linestyle='--')
     
     plt.tight_layout()
