@@ -5,19 +5,16 @@
 
 import numpy as np
 import heapq
+import config
 from definitions import User, GPU, Task
 from config import (
     NUM_USERS,
     ARRIVAL_RATE,
-    ARRIVAL_RATES,
     SIMULATION_TIME,
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEANS,
-    TASK_SIZE_MEAN_GLOBAL,
-    BATCH_SIZES,
-    EPOCHS,
+    EXPECTED_TASK_SIZE,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -49,7 +46,7 @@ class Simulator:
             
             # 性能ティアに対応する処理レートを取得
             processing_rate = GPU_PERFORMANCE_LEVELS[tier]
-            arrival_rate = ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
+            arrival_rate = config.ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
 
             # GPU と User を作成
             gpu = GPU(gpu_id=user_id, processing_rate=processing_rate)
@@ -71,7 +68,8 @@ class Simulator:
     def process_task_arrival(self, user_id):
         """タスク到着イベント処理"""
         user = self.users[user_id]
-        task = user.create_task(self.current_time)
+        task_type = self.task_patterns.get("types", {}).get(str(user_id), {}).get(str(self.current_time), "inference")
+        task = user.create_task(self.current_time, task_type=task_type)
         self.all_tasks.append(task)
         
         # タスクをユーザーのGPUに割り当て
@@ -101,11 +99,8 @@ class Simulator:
         sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
         job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
-            batch_size = BATCH_SIZES.get(task.user_id, 1000)
-            epochs = EPOCHS.get(task.user_id, 1)
-            user_mean = base_size * batch_size * epochs
-            job_size = np.random.exponential(user_mean)
+            # パターン取得失敗時はタスク種別の期待値でフォールバック
+            job_size = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
 
         # 合計仕事量を保持
         task.total_work = job_size

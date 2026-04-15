@@ -52,10 +52,11 @@ class Task:
     """
     タスク クラス
     """
-    def __init__(self, task_id, user_id, arrival_time):
+    def __init__(self, task_id, user_id, arrival_time, task_type="inference"):
         self.task_id = task_id
         self.user_id = user_id
         self.arrival_time = arrival_time  # タスク発生時刻
+        self.task_type = task_type  # "inference" または "training"
         self.start_time = None  # 処理開始時刻
         self.completion_time = None  # 完了時刻
         self.assigned_gpu = None  # 割り当てられたGPU
@@ -90,12 +91,13 @@ class User:
         self.task_count = 0  # 発生させたタスク総数
         self.tasks = []  # このユーザーが発生させたタスク一覧
         
-    def create_task(self, arrival_time):
+    def create_task(self, arrival_time, task_type="inference"):
         """新しいタスクを生成"""
         task = Task(
             task_id=f"user{self.user_id}_task{self.task_count}",
             user_id=self.user_id,
-            arrival_time=arrival_time
+            arrival_time=arrival_time,
+            task_type=task_type,
         )
         self.task_count += 1
         self.tasks.append(task)

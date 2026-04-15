@@ -39,6 +39,16 @@ class ResultAnalyzer:
 
         # 全タスク完了時刻（Makespan）
         makespan = max([t.completion_time for t in self.completed_tasks], default=0)
+
+        # タスク種別ごとの追加指標
+        inf_completed = [t for t in self.completed_tasks if getattr(t, 'task_type', 'inference') == 'inference']
+        train_completed = [t for t in self.completed_tasks if getattr(t, 'task_type', 'inference') == 'training']
+
+        inf_waits = [t.get_waiting_time() for t in inf_completed if t.get_waiting_time() is not None]
+        train_waits = [t.get_waiting_time() for t in train_completed if t.get_waiting_time() is not None]
+
+        inf_exec = [t.completion_time - t.start_time for t in inf_completed if t.start_time is not None and t.completion_time is not None]
+        train_exec = [t.completion_time - t.start_time for t in train_completed if t.start_time is not None and t.completion_time is not None]
         
         return {
             "total_tasks": total_tasks,
@@ -48,6 +58,12 @@ class ResultAnalyzer:
             "total_waiting_time": total_waiting_time,
             "avg_waiting_time": avg_waiting_time,
             "makespan": makespan,
+            "inference_task_count": len([t for t in self.tasks if getattr(t, 'task_type', 'inference') == 'inference']),
+            "training_task_count": len([t for t in self.tasks if getattr(t, 'task_type', 'inference') == 'training']),
+            "inference_avg_waiting_time": float(np.mean(inf_waits)) if inf_waits else 0.0,
+            "training_avg_waiting_time": float(np.mean(train_waits)) if train_waits else 0.0,
+            "inference_avg_execution_time": float(np.mean(inf_exec)) if inf_exec else 0.0,
+            "training_avg_execution_time": float(np.mean(train_exec)) if train_exec else 0.0,
         }
     
     def get_user_statistics(self):
@@ -133,6 +149,12 @@ class ResultAnalyzer:
         print(f"待ち時間の総数：{stats['total_waiting_time']:.4f} 秒")
         print(f"平均待ち時間：{stats['avg_waiting_time']:.4f} 秒")
         print(f"全タスク完了時刻 (Makespan)：{stats['makespan']:.4f} 秒")
+        print(f"inference タスク数：{stats['inference_task_count']}")
+        print(f"training タスク数：{stats['training_task_count']}")
+        print(f"inference 平均待ち時間：{stats['inference_avg_waiting_time']:.4f} 秒")
+        print(f"training 平均待ち時間：{stats['training_avg_waiting_time']:.4f} 秒")
+        print(f"inference 平均実行時間：{stats['inference_avg_execution_time']:.4f} 秒")
+        print(f"training 平均実行時間：{stats['training_avg_execution_time']:.4f} 秒")
         print()
     
     def get_gpu_selection_stats(self):

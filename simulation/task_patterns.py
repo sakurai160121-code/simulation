@@ -20,10 +20,16 @@ def generate_task_arrivals():
     for user_id in range(config.NUM_USERS):
         arrivals = []
         current_time = 0.0
+        arrival_rate = config.ARRIVAL_RATES.get(str(user_id), config.ARRIVAL_RATE)
+
+        # 到着率が不正な場合はタスクを生成しない（エラー耐性）
+        if arrival_rate is None or arrival_rate <= 0:
+            task_arrivals[str(user_id)] = arrivals
+            continue
         
         while True:
             # ポアソン過程でタスク到着間隔を生成（指数分布）
-            inter_arrival = np.random.exponential(1.0 / config.ARRIVAL_RATE)
+            inter_arrival = np.random.exponential(1.0 / arrival_rate)
             current_time += inter_arrival
             
             if current_time > config.SIMULATION_TIME:
@@ -36,9 +42,37 @@ def generate_task_arrivals():
     return task_arrivals
 
 
-def generate_task_sizes(task_arrivals):
+def generate_task_types(task_arrivals, scenario):
     """
-    各タスクのサイズ（仕事量）を指数分布で生成
+    シナリオ比率に従って各タスクの種別を生成
+    Returns: dict {user_id: {arrival_time: "inference"|"training"}}
+    """
+    np.random.seed(config.RANDOM_SEED + 2)
+
+    training_ratio = float(scenario.get("training_ratio", 0.0))
+    training_ratio = min(max(training_ratio, 0.0), 1.0)
+
+    task_types = {}
+    for user_id_str, arrivals in task_arrivals.items():
+        task_types[user_id_str] = {}
+        for arrival_time in arrivals:
+            task_type = "training" if np.random.random() < training_ratio else "inference"
+            task_types[user_id_str][str(arrival_time)] = task_type
+
+    return task_types
+
+
+def _sample_task_size(task_type):
+    """タスク種別に応じたログ正規分布からタスクサイズをサンプル。"""
+    dist = config.TASK_SIZE_DISTRIBUTION.get(task_type, config.TASK_SIZE_DISTRIBUTION["inference"])
+    sampled = np.random.lognormal(mean=dist["lognormal_mean"], sigma=dist["lognormal_sigma"])
+    clipped = np.clip(sampled, dist["clip_min"], dist["clip_max"])
+    return float(clipped)
+
+
+def generate_task_sizes(task_arrivals, task_types):
+    """
+    各タスクのサイズ（仕事量）をタスク種別別ログ正規分布で生成
     Returns: dict {user_id: {arrival_time: task_size}}
     """
     np.random.seed(config.RANDOM_SEED + 1)  # 異なるシードでタスクサイズを生成
@@ -46,36 +80,36 @@ def generate_task_sizes(task_arrivals):
     task_sizes = {}
     
     for user_id_str, arrivals in task_arrivals.items():
-        user_id = int(user_id_str)
-        
-        # ユーザーのタスクサイズ平均を取得
-        base_size = config.TASK_SIZE_MEANS[user_id]
-        batch_size = config.BATCH_SIZES.get(user_id, 1000)
-        epochs = config.EPOCHS.get(user_id, 1)
-        mean_size = base_size * batch_size * epochs
-        
         task_sizes[user_id_str] = {}
         for arrival_time in arrivals:
-            # 指数分布でタスクサイズを生成
-            size = float(np.random.exponential(mean_size))
+            task_type = task_types.get(user_id_str, {}).get(str(arrival_time), "inference")
+            size = _sample_task_size(task_type)
             task_sizes[user_id_str][str(arrival_time)] = size
     
     return task_sizes
 
 
-def save_patterns(filename="task_patterns.json"):
+def save_patterns(filename="task_patterns.json", scenario_name=None, scenario=None):
     """タスク発生パターンをファイルに保存"""
+    scenario_name = scenario_name or config.CURRENT_TASK_SCENARIO_NAME
+    scenario = scenario or config.CURRENT_TASK_SCENARIO
+
     task_arrivals = generate_task_arrivals()
-    task_sizes = generate_task_sizes(task_arrivals)
+    task_types = generate_task_types(task_arrivals, scenario)
+    task_sizes = generate_task_sizes(task_arrivals, task_types)
     
     patterns = {
         "arrivals": task_arrivals,
         "sizes": task_sizes,
+        "types": task_types,
         "config": {
             "num_users": config.NUM_USERS,
             "arrival_rate": config.ARRIVAL_RATE,
+            "arrival_rates": config.ARRIVAL_RATES,
             "simulation_time": config.SIMULATION_TIME,
             "random_seed": config.RANDOM_SEED,
+            "scenario_name": scenario_name,
+            "scenario": scenario,
         }
     }
     
@@ -90,6 +124,19 @@ def load_patterns(filename="task_patterns.json"):
     """タスク発生パターンをファイルから読み込み"""
     with open(filename, 'r') as f:
         patterns = json.load(f)
+
+    # 旧形式JSONとの互換性を維持
+    if "types" not in patterns:
+        patterns["types"] = {}
+        arrivals = patterns.get("arrivals", {})
+        for user_id_str, user_arrivals in arrivals.items():
+            patterns["types"][user_id_str] = {
+                str(arrival_time): "inference" for arrival_time in user_arrivals
+            }
+
+    patterns.setdefault("config", {})
+    patterns["config"].setdefault("scenario_name", config.CURRENT_TASK_SCENARIO_NAME)
+    patterns["config"].setdefault("scenario", config.CURRENT_TASK_SCENARIO)
     
     return patterns
 

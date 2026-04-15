@@ -3,6 +3,9 @@
 18ユーザー・9ティア構成
 """
 
+from typing import Dict
+import numpy as np
+
 # ユーザー数
 NUM_USERS = 18
 
@@ -10,6 +13,9 @@ NUM_USERS = 18
 # 全ユーザー共通
 ARRIVAL_RATE = 0.005  # λ=0.005 (200秒に1回タスク発生の平均)
 ARRIVAL_RATES = {str(i): ARRIVAL_RATE for i in range(18)}  # 全ユーザー同じ到着率
+
+# 評価対象の負荷率
+LOAD_RATES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 # GPU性能（TFLOPS）
 # 9段階ティア、各ティアに2ユーザーずつ
@@ -48,6 +54,79 @@ TASK_SIZE_MEANS = {
     17: 0.360,   # User 17 - Tier9
 }
 
+# タスクシナリオ（training/inference 比率）
+TASK_SCENARIOS = {
+    "scenario1_all_inference": {"training_ratio": 0.0, "inference_ratio": 1.0},
+    "scenario2_25_training": {"training_ratio": 0.25, "inference_ratio": 0.75},
+    "scenario3_50_training": {"training_ratio": 0.50, "inference_ratio": 0.50},
+    "scenario4_75_training": {"training_ratio": 0.75, "inference_ratio": 0.25},
+    "scenario5_all_training": {"training_ratio": 1.0, "inference_ratio": 0.0},
+}
+
+# 現在実行中シナリオ（run_multi_load_scenarios.py で更新）
+CURRENT_TASK_SCENARIO_NAME = "scenario1_all_inference"
+CURRENT_TASK_SCENARIO = TASK_SCENARIOS[CURRENT_TASK_SCENARIO_NAME].copy()
+
+# タスク種別ごとのサイズ分布パラメータ
+TASK_SIZE_DISTRIBUTION = {
+    "inference": {
+        "lognormal_mean": float(np.log(8000.0)),
+        "lognormal_sigma": 0.6,
+        "clip_min": 1000.0,
+        "clip_max": 50000.0,
+    },
+    "training": {
+        "lognormal_mean": float(np.log(250000.0)),
+        "lognormal_sigma": 1.0,
+        "clip_min": 30000.0,
+        "clip_max": 3000000.0,
+    },
+}
+
+# 予測・概算に使う期待タスクサイズ（TFLOPs）
+EXPECTED_TASK_SIZE = {
+    "inference": 9580.0,
+    "training": 412180.0,
+}
+
+
+def get_scenario_expected_task_size(scenario: Dict[str, float] = None) -> float:
+    """シナリオ比率に基づく混合平均タスクサイズ E[S] を返す。"""
+    s = scenario if scenario is not None else CURRENT_TASK_SCENARIO
+    p_inf = float(s.get("inference_ratio", 0.0))
+    p_train = float(s.get("training_ratio", 0.0))
+    return p_inf * EXPECTED_TASK_SIZE["inference"] + p_train * EXPECTED_TASK_SIZE["training"]
+
+
+def get_current_task_ratios() -> Dict[str, float]:
+    """現在シナリオの inference/training 比率を返す。"""
+    p_inf = float(CURRENT_TASK_SCENARIO.get("inference_ratio", 0.0))
+    p_train = float(CURRENT_TASK_SCENARIO.get("training_ratio", 0.0))
+    return {
+        "inference_ratio": p_inf,
+        "training_ratio": p_train,
+    }
+
+
+def get_expected_task_size_by_ratios(inference_ratio: float, training_ratio: float) -> float:
+    """与えられた比率から混合期待タスクサイズを返す。"""
+    p_inf = float(inference_ratio)
+    p_train = float(training_ratio)
+    return p_inf * EXPECTED_TASK_SIZE["inference"] + p_train * EXPECTED_TASK_SIZE["training"]
+
+
+def get_user_expected_task_size(user_id: int) -> float:
+    """
+    ユーザー固有の期待タスクサイズを返す。
+    現状はユーザー固有比率が無いため、現在シナリオ比率でフォールバックする。
+    """
+    _ = user_id
+    ratios = get_current_task_ratios()
+    return get_expected_task_size_by_ratios(
+        ratios["inference_ratio"],
+        ratios["training_ratio"],
+    )
+
 # バッチサイズ（画像枚数）
 # ユーザー0～8: 3000バッチ
 # ユーザー9～17: 6000バッチ
@@ -81,7 +160,7 @@ GPU_TIER_ASSIGNMENT = {
 }
 
 # シミュレーション終了時刻
-SIMULATION_TIME = 86400  # 1時間（3600秒）
+SIMULATION_TIME = 8640000  # 1時間（3600秒）
 
 # ランダムシード（再現性のため）
 RANDOM_SEED = 42

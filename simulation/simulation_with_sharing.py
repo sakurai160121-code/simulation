@@ -6,19 +6,16 @@
 
 import numpy as np
 import heapq
+import config
 from definitions import User, GPU, Task
 from config import (
     NUM_USERS,
     ARRIVAL_RATE,
-    ARRIVAL_RATES,
     SIMULATION_TIME,
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEANS,
-    TASK_SIZE_MEAN_GLOBAL,
-    BATCH_SIZES,
-    EPOCHS,
+    EXPECTED_TASK_SIZE,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -61,7 +58,8 @@ class SimulatorWithSharing:
         
         # ユーザー作成（GPUは割り当てない、共有プールを使う）
         for user_id in range(NUM_USERS):
-            user = User(user_id=user_id, gpu=None, arrival_rate=ARRIVAL_RATE)
+            arrival_rate = config.ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
+            user = User(user_id=user_id, gpu=None, arrival_rate=arrival_rate)
             self.users.append(user)
             
             # 最初のタスク発生イベントをスケジュール（task_patternsから取得）
@@ -75,22 +73,22 @@ class SimulatorWithSharing:
         """イベントをスケジュール"""
         heapq.heappush(self.event_queue, (time, event_type, data))
     
-    def predict_completion_time(self, gpu):
+    def predict_completion_time(self, gpu, new_task_type):
         """
         GPUの予想完了時刻を計算（正確版）
-        キュー内の各タスクの実際のタスクサイズを使用
+        キュー内の待ち時間に加えて、新規到着タスク自身の処理時間も含める
         """
-        if gpu.current_task is None and len(gpu.task_queue) == 0:
-            # GPUが空いている
-            return self.current_time
-        
         # 現在のタスクが完了する時刻
         completion_time = gpu.finish_time if gpu.current_task is not None else self.current_time
         
-        # キュー内の各タスクを実際のタスクサイズで計算
+        # キュー内タスクの期待処理時間を加算
         for task in gpu.task_queue:
-            task_size_mean = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
+            task_size_mean = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
             completion_time += task_size_mean / gpu.processing_rate
+
+        # 新規到着タスク自身の期待処理時間を加算
+        new_task_size = EXPECTED_TASK_SIZE.get(new_task_type, EXPECTED_TASK_SIZE["inference"])
+        completion_time += new_task_size / gpu.processing_rate
         
         return completion_time
     
@@ -99,16 +97,12 @@ class SimulatorWithSharing:
         sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
         job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
-            batch_size = BATCH_SIZES.get(task.user_id, 1000)
-            epochs = EPOCHS.get(task.user_id, 1)
-            user_mean = base_size * batch_size * epochs
-            job_size = np.random.exponential(user_mean)
+            job_size = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
         # 合計仕事量を保持
         task.total_work = job_size
         return job_size / gpu.processing_rate
     
-    def select_best_gpu(self):
+    def select_best_gpu(self, new_task_type):
         """
         完了時刻が最も早いGPUを選択
         Returns: GPU
@@ -120,7 +114,7 @@ class SimulatorWithSharing:
         earliest_time = float('inf')
         
         for gpu in self.shared_gpus:
-            completion_time = self.predict_completion_time(gpu)
+            completion_time = self.predict_completion_time(gpu, new_task_type)
             if completion_time < earliest_time:
                 earliest_time = completion_time
                 best_gpu = gpu
@@ -130,11 +124,12 @@ class SimulatorWithSharing:
     def process_task_arrival(self, user_id):
         """タスク到着イベント処理"""
         user = self.users[user_id]
-        task = user.create_task(self.current_time)
+        task_type = self.task_patterns.get("types", {}).get(str(user_id), {}).get(str(self.current_time), "inference")
+        task = user.create_task(self.current_time, task_type=task_type)
         self.all_tasks.append(task)
         
-        # 最適なGPUを選択
-        best_gpu = self.select_best_gpu()
+        # 最適なGPUを選択（到着タスクのtypeを予測へ反映）
+        best_gpu = self.select_best_gpu(task_type)
         if best_gpu is None:
             # GPUプールが空の場合はタスクを未完了のまま放置
             return

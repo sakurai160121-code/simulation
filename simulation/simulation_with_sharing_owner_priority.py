@@ -6,19 +6,17 @@
 
 import numpy as np
 import heapq
+import config
 from definitions import User, GPU, Task
 from config import (
     NUM_USERS,
     ARRIVAL_RATE,
-    ARRIVAL_RATES,
     SIMULATION_TIME,
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEANS,
-    TASK_SIZE_MEAN_GLOBAL,
-    BATCH_SIZES,
-    EPOCHS,
+    EXPECTED_TASK_SIZE,
+    get_user_expected_task_size,
 )
 from results import analyze_and_print_results
 from task_patterns import load_patterns, save_patterns
@@ -63,7 +61,7 @@ class SimulatorWithOwnerPriority:
         
         # ユーザー作成（GPUは割り当てない、共有プールを使う）
         for user_id in range(NUM_USERS):
-            arrival_rate = ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
+            arrival_rate = config.ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
             user = User(user_id=user_id, gpu=None, arrival_rate=arrival_rate)
             self.users.append(user)
             
@@ -85,8 +83,8 @@ class SimulatorWithOwnerPriority:
         ρ_own = λ_own · s̄_own / μ
         """
         owner_id = self.gpu_owner[gpu.gpu_id]
-        owner_lambda = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        owner_task_size_mean = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL)
+        owner_lambda = config.ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
+        owner_task_size_mean = get_user_expected_task_size(owner_id)
         
         utilization = owner_lambda * owner_task_size_mean / gpu.processing_rate
         return utilization
@@ -106,14 +104,11 @@ class SimulatorWithOwnerPriority:
             effective_rate = gpu.processing_rate / (1.0 + utilization)
             return effective_rate
     
-    def predict_completion_time_own_gpu(self, gpu, user_id):
+    def predict_completion_time_own_gpu(self, gpu, user_id, new_task_type):
         """
         自分のGPUでの予想完了時刻
-        = max(実行中タスク残り時間, 0) + 自分のキュー内タスク処理時間
+        = max(実行中タスク残り時間, 0) + 自分のキュー内タスク処理時間 + 新規タスク処理時間
         """
-        if gpu.current_task is None and len(gpu.task_queue) == 0:
-            return self.current_time
-        
         # 実行中タスクの残り時間
         current_remaining = 0
         if gpu.current_task is not None:
@@ -124,37 +119,34 @@ class SimulatorWithOwnerPriority:
         user_queue_time = 0
         for task in gpu.task_queue:
             if task.user_id == user_id:
-                # 自分のタスクのサービス時間（バッチ係数適用）
-                base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
-                batch_size = BATCH_SIZES.get(task.user_id, 1000)
-                epochs = EPOCHS.get(task.user_id, 1)
-                task_size_mean = base_size * batch_size * epochs
+                # 自分のタスクのサービス時間（タスク種別ごとの期待サイズ）
+                task_size_mean = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
                 user_queue_time += task_size_mean / gpu.processing_rate
-        
-        return self.current_time + current_remaining + user_queue_time
+
+        new_task_size = EXPECTED_TASK_SIZE.get(new_task_type, EXPECTED_TASK_SIZE["inference"])
+        new_task_service_time = new_task_size / gpu.processing_rate
+
+        return self.current_time + current_remaining + user_queue_time + new_task_service_time
     
-    def predict_completion_time_other_gpu(self, gpu, user_id):
+    def predict_completion_time_other_gpu(self, gpu, user_id, new_task_type):
         """
         他人のGPUでの予想完了時刻
-        実効処理レートを使ってキューを概算
+        実効処理レートを使ってキューと新規タスクを概算
         """
-        if gpu.current_task is None and len(gpu.task_queue) == 0:
-            return self.current_time
-        
         completion_time = gpu.finish_time if gpu.current_task is not None else self.current_time
         
-        # キュー内の各タスクを実際のタスクサイズで計算（バッチ係数適用）
+        # キュー内タスクは task_type の期待サイズで概算
         effective_rate = self.get_effective_processing_rate(gpu, user_id)
         for task in gpu.task_queue:
-            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
-            batch_size = BATCH_SIZES.get(task.user_id, 1000)
-            epochs = EPOCHS.get(task.user_id, 1)
-            task_size_mean = base_size * batch_size * epochs
+            task_size_mean = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
             completion_time += task_size_mean / effective_rate
+
+        new_task_size = EXPECTED_TASK_SIZE.get(new_task_type, EXPECTED_TASK_SIZE["inference"])
+        completion_time += new_task_size / effective_rate
         
         return completion_time
     
-    def select_best_gpu(self, user_id):
+    def select_best_gpu(self, user_id, new_task_type):
         """
         ユーザーにとって最適なGPUを選択
         自分のGPU：割り込み可能
@@ -170,10 +162,10 @@ class SimulatorWithOwnerPriority:
         for gpu in self.shared_gpus:
             if self.gpu_owner[gpu.gpu_id] == user_id:
                 # 自分のGPU
-                completion_time = self.predict_completion_time_own_gpu(gpu, user_id)
+                completion_time = self.predict_completion_time_own_gpu(gpu, user_id, new_task_type)
             else:
                 # 他人のGPU
-                completion_time = self.predict_completion_time_other_gpu(gpu, user_id)
+                completion_time = self.predict_completion_time_other_gpu(gpu, user_id, new_task_type)
             
             if completion_time < earliest_time:
                 earliest_time = completion_time
@@ -184,11 +176,12 @@ class SimulatorWithOwnerPriority:
     def process_task_arrival(self, user_id):
         """タスク到着イベント処理"""
         user = self.users[user_id]
-        task = user.create_task(self.current_time)
+        task_type = self.task_patterns.get("types", {}).get(str(user_id), {}).get(str(self.current_time), "inference")
+        task = user.create_task(self.current_time, task_type=task_type)
         self.all_tasks.append(task)
         
-        # 最適なGPUを選択
-        best_gpu = self.select_best_gpu(user_id)
+        # 最適なGPUを選択（到着タスクのtypeを予測へ反映）
+        best_gpu = self.select_best_gpu(user_id, task_type)
         if best_gpu is None:
             # GPUプールが空の場合はタスクを未完了のまま放置
             return
@@ -224,11 +217,7 @@ class SimulatorWithOwnerPriority:
         sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
         job_size = sizes.get(str(task.arrival_time))
         if job_size is None:
-            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
-            batch_size = BATCH_SIZES.get(task.user_id, 1000)
-            epochs = EPOCHS.get(task.user_id, 1)
-            user_mean = base_size * batch_size * epochs
-            job_size = np.random.exponential(user_mean)
+            job_size = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
 
         # 合計仕事量を保持
         task.total_work = job_size

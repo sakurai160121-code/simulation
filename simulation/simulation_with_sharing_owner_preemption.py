@@ -11,19 +11,19 @@
 
 import numpy as np
 import heapq
+import config
 from definitions import User, GPU, Task
 from config import (
     NUM_USERS,
     ARRIVAL_RATE,
-    ARRIVAL_RATES,
     SIMULATION_TIME,
     RANDOM_SEED,
     GPU_PERFORMANCE_LEVELS,
     GPU_TIER_ASSIGNMENT,
-    TASK_SIZE_MEANS,
-    TASK_SIZE_MEAN_GLOBAL,
-    BATCH_SIZES,
-    EPOCHS,
+    EXPECTED_TASK_SIZE,
+    get_current_task_ratios,
+    get_expected_task_size_by_ratios,
+    get_user_expected_task_size,
     INTERRUPTION_OVERHEAD_FACTOR,
 )
 from results import analyze_and_print_results
@@ -68,7 +68,7 @@ class SimulatorWithOwnerPreemption:
 
         # ユーザー作成（共有プール運用）
         for user_id in range(NUM_USERS):
-            arrival_rate = ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
+            arrival_rate = config.ARRIVAL_RATES.get(str(user_id), ARRIVAL_RATE)
             user = User(user_id=user_id, gpu=None, arrival_rate=arrival_rate)
             self.users.append(user)
 
@@ -85,10 +85,8 @@ class SimulatorWithOwnerPreemption:
     # ---------------------- 実効性能・待ち時間推定 ----------------------
     def get_owner_utilization(self, gpu):
         owner_id = self.gpu_owner[gpu.gpu_id]
-        owner_lambda = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        batch_size = BATCH_SIZES.get(owner_id, 1000)
-        epochs = EPOCHS.get(owner_id, 1)
-        owner_task_size_mean = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL) * batch_size * epochs
+        owner_lambda = config.ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
+        owner_task_size_mean = get_user_expected_task_size(owner_id)
         return owner_lambda * owner_task_size_mean / gpu.processing_rate
 
     def get_effective_processing_rate(self, gpu, user_id):
@@ -102,11 +100,12 @@ class SimulatorWithOwnerPreemption:
         job_sizes = self.task_patterns.get("sizes", {}).get(str(user_id), {})
         job_size = job_sizes.get(str(arrival_time))
         if job_size is None:
-            base_size = TASK_SIZE_MEANS.get(user_id, TASK_SIZE_MEAN_GLOBAL)
-            batch_size = BATCH_SIZES.get(user_id, 1000)
-            epochs = EPOCHS.get(user_id, 1)
-            mean = base_size * batch_size * epochs
-            job_size = np.random.exponential(mean)
+            # パターン取得失敗時は現在シナリオ比率ベースでフォールバック
+            ratios = get_current_task_ratios()
+            job_size = get_expected_task_size_by_ratios(
+                ratios["inference_ratio"],
+                ratios["training_ratio"],
+            )
         return job_size
 
     def predict_owner_wait_on_gpu(self, gpu, owner_id):
@@ -118,18 +117,15 @@ class SimulatorWithOwnerPreemption:
         for t in gpu.task_queue:
             if t.user_id == owner_id:
                 # 所有者キュー分
-                size = self.compute_job_size(t.user_id, t.arrival_time)
+                size = EXPECTED_TASK_SIZE.get(t.task_type, EXPECTED_TASK_SIZE["inference"])
                 wait += size / gpu.processing_rate
         return wait
 
     def expected_interruption_penalty(self, gpu, service_time):
         # 所有者到来率による途中切断リスクの期待ペナルティ
         owner_id = self.gpu_owner[gpu.gpu_id]
-        lam = ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
-        base_size = TASK_SIZE_MEANS.get(owner_id, TASK_SIZE_MEAN_GLOBAL)
-        batch_size = BATCH_SIZES.get(owner_id, 1000)
-        epochs = EPOCHS.get(owner_id, 1)
-        mean_owner_size = base_size * batch_size * epochs
+        lam = config.ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
+        mean_owner_size = get_user_expected_task_size(owner_id)
         mean_owner_service = mean_owner_size / gpu.processing_rate
         # 期待割込み回数（Poissonの期待値）：lam * service_time を用いる強化版
         expected_interruptions = lam * service_time
@@ -138,26 +134,33 @@ class SimulatorWithOwnerPreemption:
         return penalty
 
     # ---------------------- GPU選択ロジック ----------------------
-    def predict_completion_time_own_gpu(self, gpu, user_id, remaining_work):
-        wait_owner = self.predict_owner_wait_on_gpu(gpu, user_id)
-        return self.current_time + wait_owner + remaining_work / gpu.processing_rate
+    def _get_prediction_work(self, user_id, remaining_work=None, new_task_type=None):
+        """予測に使う仕事量を返す。新規到着時は task_type、再開時は remaining_work を使う。"""
+        if new_task_type is not None:
+            return EXPECTED_TASK_SIZE.get(new_task_type, EXPECTED_TASK_SIZE["inference"])
+        if remaining_work is not None:
+            return remaining_work
+        return get_user_expected_task_size(user_id)
 
-    def predict_completion_time_other_gpu(self, gpu, user_id, remaining_work):
+    def predict_completion_time_own_gpu(self, gpu, user_id, remaining_work=None, new_task_type=None):
+        wait_owner = self.predict_owner_wait_on_gpu(gpu, user_id)
+        work = self._get_prediction_work(user_id, remaining_work=remaining_work, new_task_type=new_task_type)
+        return self.current_time + wait_owner + work / gpu.processing_rate
+
+    def predict_completion_time_other_gpu(self, gpu, user_id, remaining_work=None, new_task_type=None):
         base = gpu.finish_time if gpu.current_task is not None else self.current_time
         # 既存キューの正確な計算（各タスクの実際のサイズを使用、バッチ係数適用）
         mu_eff = self.get_effective_processing_rate(gpu, user_id)
         queue_time = 0.0
         for task in gpu.task_queue:
-            base_size = TASK_SIZE_MEANS.get(task.user_id, TASK_SIZE_MEAN_GLOBAL)
-            batch_size = BATCH_SIZES.get(task.user_id, 1000)
-            epochs = EPOCHS.get(task.user_id, 1)
-            task_size_mean = base_size * batch_size * epochs
+            task_size_mean = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
             queue_time += task_size_mean / mu_eff
-        service_time = remaining_work / mu_eff
+        work = self._get_prediction_work(user_id, remaining_work=remaining_work, new_task_type=new_task_type)
+        service_time = work / mu_eff
         penalty = self.expected_interruption_penalty(gpu, service_time)
         return base + queue_time + service_time + penalty
 
-    def select_best_gpu_for_new(self, user_id, remaining_work):
+    def select_best_gpu_for_new(self, user_id, remaining_work, new_task_type):
         if not self.shared_gpus:
             return None
         
@@ -165,9 +168,19 @@ class SimulatorWithOwnerPreemption:
         best_time = float('inf')
         for gpu in self.shared_gpus:
             if self.gpu_owner[gpu.gpu_id] == user_id:
-                t = self.predict_completion_time_own_gpu(gpu, user_id, remaining_work)
+                t = self.predict_completion_time_own_gpu(
+                    gpu,
+                    user_id,
+                    remaining_work=remaining_work,
+                    new_task_type=new_task_type,
+                )
             else:
-                t = self.predict_completion_time_other_gpu(gpu, user_id, remaining_work)
+                t = self.predict_completion_time_other_gpu(
+                    gpu,
+                    user_id,
+                    remaining_work=remaining_work,
+                    new_task_type=new_task_type,
+                )
             if t < best_time:
                 best_time = t
                 best_gpu = gpu
@@ -185,7 +198,7 @@ class SimulatorWithOwnerPreemption:
             # 自分のGPUがない場合は他の選択肢のみを検討
             t_own = float('inf')
         else:
-            t_own = self.predict_completion_time_own_gpu(own_gpu, task.user_id, task.remaining_work)
+            t_own = self.predict_completion_time_own_gpu(own_gpu, task.user_id, remaining_work=task.remaining_work)
 
         # 2) プリエンプト元GPUで先頭待機（所有者待ち）
         wait_owner = self.predict_owner_wait_on_gpu(preempt_gpu, self.gpu_owner[preempt_gpu.gpu_id])
@@ -202,7 +215,7 @@ class SimulatorWithOwnerPreemption:
         for gpu in self.shared_gpus:
             if gpu is preempt_gpu:
                 continue
-            t = self.predict_completion_time_other_gpu(gpu, task.user_id, task.remaining_work)
+            t = self.predict_completion_time_other_gpu(gpu, task.user_id, remaining_work=task.remaining_work)
             if t < best_other_time:
                 best_other_time = t
                 best_other_gpu = gpu
@@ -276,14 +289,15 @@ class SimulatorWithOwnerPreemption:
     # ---------------------- イベント処理 ----------------------
     def process_task_arrival(self, user_id):
         user = self.users[user_id]
-        task = user.create_task(self.current_time)
+        task_type = self.task_patterns.get("types", {}).get(str(user_id), {}).get(str(self.current_time), "inference")
+        task = user.create_task(self.current_time, task_type=task_type)
         # タスクサイズ→残作業として保持
         task.remaining_work = self.compute_job_size(user_id, task.arrival_time)
         task.total_work = task.remaining_work
         self.all_tasks.append(task)
 
         # 最適GPU選択（他GPUは中断リスク期待値込み）
-        best_gpu = self.select_best_gpu_for_new(user_id, task.remaining_work)
+        best_gpu = self.select_best_gpu_for_new(user_id, task.remaining_work, task_type)
         if best_gpu is None:
             # GPUプールが空の場合はタスクを未完了のまま放置
             return
