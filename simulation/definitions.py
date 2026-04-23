@@ -57,9 +57,15 @@ class Task:
         self.user_id = user_id
         self.arrival_time = arrival_time  # タスク発生時刻
         self.task_type = task_type  # "inference" または "training"
-        self.start_time = None  # 処理開始時刻
+        self.assigned_time = None  # GPU割り当て決定時刻（スケジューラが割り当てたとき）
+        self.first_execution_start_time = None  # 初回実行開始時刻（待ち時間計測用）
+        self.last_execution_start_time = None  # 最後の実行開始時刻（中断再開での更新用）
         self.completion_time = None  # 完了時刻
+        self.accumulated_service_time = 0.0  # 累積実行時間（プリエンプション対応）
+        self.start_time = None  # 後方互換性のため残す（last_execution_start_timeと同期）
+        self.execution_start_time = None  # 後方互換性（first_execution_start_timeのエイリアス）
         self.assigned_gpu = None  # 割り当てられたGPU
+        self.job_size = None  # 到着時に確定したタスクサイズ（TFLOPs）
         self.total_work = None  # タスク全体の仕事量（TFLOPs）
         # 共有・プリエンプトシナリオ用：残作業量（タスクサイズ）。開始時に設定、プリエンプトで更新
         self.remaining_work = None
@@ -73,8 +79,30 @@ class Task:
         self.interrupted_others = set()  # このタスクが割り込んだタスクIDのセット
         self.preempted_others_count = 0  # このタスクが他のタスクをプリエンプトした回数
         
+    def get_assignment_delay(self):
+        """割り当て遅延 = GPU割り当て決定時刻 - 発生時刻"""
+        if self.assigned_time is None:
+            return None
+        return self.assigned_time - self.arrival_time
+        
     def get_waiting_time(self):
-        """レスポンス時間 = 完了時刻 - 発生時刻（到着から完了までの総時間）"""
+        """待ち時間 = 初回実行開始時刻 - 発生時刻"""
+        if self.first_execution_start_time is None:
+            return None
+        return self.first_execution_start_time - self.arrival_time
+
+    def get_service_time(self):
+        """サービス時間 = 実際にGPUで動作していた時間（累積）"""
+        # プリエンプション対応：累積実行時間を使用
+        if self.accumulated_service_time > 0:
+            return self.accumulated_service_time
+        # 通常ケース：最後の実行開始から完了までの時間
+        if self.last_execution_start_time is None or self.completion_time is None:
+            return None
+        return self.completion_time - self.last_execution_start_time
+
+    def get_turnaround_time(self):
+        """TAT (Turnaround Time) = 完了時刻 - 発生時刻"""
         if self.completion_time is None:
             return None
         return self.completion_time - self.arrival_time

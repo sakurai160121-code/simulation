@@ -178,6 +178,3 @@ python run_multi_load_with_participation.py
 
 - 生成物（`simulation/outputs/`、キャッシュ、ログなど）は `.gitignore` で除外設定済み
 
-## ライセンス
-
-研究用途のコードです。公開・再配布の扱いは研究室ルールに従ってください。

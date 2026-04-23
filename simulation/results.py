@@ -12,8 +12,6 @@ from config import GPU_TIER_ASSIGNMENT, GPU_PERFORMANCE_LEVELS, SIMULATION_TIME
 # 日本語フォントの設定
 plt.rcParams['font.sans-serif'] = ['Yu Gothic', 'Hiragino Sans', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
-
-
 class ResultAnalyzer:
     """
     シミュレーション結果の分析クラス
@@ -32,10 +30,24 @@ class ResultAnalyzer:
         completion_rate_cutoff = completed_by_cutoff / total_tasks * 100 if total_tasks > 0 else 0
         final_completion_rate = completed_tasks / total_tasks * 100 if total_tasks > 0 else 0
         
-        # 待ち時間の計算
-        waiting_times = [t.get_waiting_time() for t in self.completed_tasks]
+        # 待ち時間の計算（queue wait）
+        waiting_times = [t.get_waiting_time() for t in self.completed_tasks if t.get_waiting_time() is not None]
         total_waiting_time = sum(waiting_times) if waiting_times else 0
         avg_waiting_time = np.mean(waiting_times) if waiting_times else 0
+
+        # サービス時間の計算（GPU使用時間）
+        service_times = [t.get_service_time() for t in self.completed_tasks if t.get_service_time() is not None]
+        avg_service_time = np.mean(service_times) if service_times else 0
+
+        # TATの計算（arrival -> completion）
+        tat_list = [t.get_turnaround_time() for t in self.completed_tasks if t.get_turnaround_time() is not None]
+        avg_tat = np.mean(tat_list) if tat_list else 0
+        max_tat = np.max(tat_list) if tat_list else 0
+        min_tat = np.min(tat_list) if tat_list else 0
+
+        # 割り当て遅延の計算（assignment delay）
+        assignment_delays = [t.get_assignment_delay() for t in self.completed_tasks if t.get_assignment_delay() is not None]
+        avg_assignment_delay = np.mean(assignment_delays) if assignment_delays else 0
 
         # 全タスク完了時刻（Makespan）
         makespan = max([t.completion_time for t in self.completed_tasks], default=0)
@@ -46,9 +58,10 @@ class ResultAnalyzer:
 
         inf_waits = [t.get_waiting_time() for t in inf_completed if t.get_waiting_time() is not None]
         train_waits = [t.get_waiting_time() for t in train_completed if t.get_waiting_time() is not None]
-
-        inf_exec = [t.completion_time - t.start_time for t in inf_completed if t.start_time is not None and t.completion_time is not None]
-        train_exec = [t.completion_time - t.start_time for t in train_completed if t.start_time is not None and t.completion_time is not None]
+        inf_services = [t.get_service_time() for t in inf_completed if t.get_service_time() is not None]
+        train_services = [t.get_service_time() for t in train_completed if t.get_service_time() is not None]
+        inf_tats = [t.get_turnaround_time() for t in inf_completed if t.get_turnaround_time() is not None]
+        train_tats = [t.get_turnaround_time() for t in train_completed if t.get_turnaround_time() is not None]
         
         return {
             "total_tasks": total_tasks,
@@ -57,13 +70,20 @@ class ResultAnalyzer:
             "final_completion_rate": final_completion_rate,
             "total_waiting_time": total_waiting_time,
             "avg_waiting_time": avg_waiting_time,
+            "avg_service_time": avg_service_time,
+            "avg_tat": avg_tat,
+            "avg_assignment_delay": avg_assignment_delay,
+            "max_tat": max_tat,
+            "min_tat": min_tat,
             "makespan": makespan,
             "inference_task_count": len([t for t in self.tasks if getattr(t, 'task_type', 'inference') == 'inference']),
             "training_task_count": len([t for t in self.tasks if getattr(t, 'task_type', 'inference') == 'training']),
             "inference_avg_waiting_time": float(np.mean(inf_waits)) if inf_waits else 0.0,
             "training_avg_waiting_time": float(np.mean(train_waits)) if train_waits else 0.0,
-            "inference_avg_execution_time": float(np.mean(inf_exec)) if inf_exec else 0.0,
-            "training_avg_execution_time": float(np.mean(train_exec)) if train_exec else 0.0,
+            "inference_avg_service_time": float(np.mean(inf_services)) if inf_services else 0.0,
+            "training_avg_service_time": float(np.mean(train_services)) if train_services else 0.0,
+            "inference_avg_tat": float(np.mean(inf_tats)) if inf_tats else 0.0,
+            "training_avg_tat": float(np.mean(train_tats)) if train_tats else 0.0,
         }
     
     def get_user_statistics(self):
@@ -89,10 +109,12 @@ class ResultAnalyzer:
             completion_rate_cutoff = completed_by_cutoff / total_user_tasks * 100 if total_user_tasks > 0 else 0
             final_completion_rate = completed_user_tasks / total_user_tasks * 100 if total_user_tasks > 0 else 0
             
-            # 待ち時間の計算
-            waiting_times = [t.get_waiting_time() for t in user_completed_tasks]
+            # 待ち時間とTATの計算
+            waiting_times = [t.get_waiting_time() for t in user_completed_tasks if t.get_waiting_time() is not None]
             total_waiting_time = sum(waiting_times) if waiting_times else 0
             avg_waiting_time = np.mean(waiting_times) if waiting_times else 0
+            tat_list = [t.get_turnaround_time() for t in user_completed_tasks if t.get_turnaround_time() is not None]
+            avg_tat = np.mean(tat_list) if tat_list else 0
 
             # 実行した総仕事量（TFLOPs）
             total_work = sum([t.total_work for t in user_completed_tasks if t.total_work is not None])
@@ -114,6 +136,7 @@ class ResultAnalyzer:
                 "final_completion_rate": final_completion_rate,
                 "total_waiting_time": total_waiting_time,
                 "avg_waiting_time": avg_waiting_time,
+                "avg_tat": avg_tat,
                 "total_work": total_work,
                 "own_gpu_work": own_gpu_work,
                 "other_gpu_work": other_gpu_work,
@@ -146,15 +169,21 @@ class ResultAnalyzer:
         print(f"完了したタスク数：{stats['completed_tasks']}")
         print(f"タスク完了率（3600秒時点）：{stats['completion_rate_cutoff']:.2f}%")
         print(f"タスク完了率（最終）：{stats['final_completion_rate']:.2f}%")
-        print(f"待ち時間の総数：{stats['total_waiting_time']:.4f} 秒")
+        print(f"平均TAT：{stats['avg_tat']:.4f} 秒")
+        print(f"最小TAT：{stats['min_tat']:.4f} 秒")
+        print(f"最大TAT：{stats['max_tat']:.4f} 秒")
+        print(f"平均割り当て遅延：{stats['avg_assignment_delay']:.4f} 秒")
         print(f"平均待ち時間：{stats['avg_waiting_time']:.4f} 秒")
+        print(f"平均サービス時間：{stats['avg_service_time']:.4f} 秒")
         print(f"全タスク完了時刻 (Makespan)：{stats['makespan']:.4f} 秒")
         print(f"inference タスク数：{stats['inference_task_count']}")
         print(f"training タスク数：{stats['training_task_count']}")
+        print(f"inference 平均TAT：{stats['inference_avg_tat']:.4f} 秒")
+        print(f"training 平均TAT：{stats['training_avg_tat']:.4f} 秒")
         print(f"inference 平均待ち時間：{stats['inference_avg_waiting_time']:.4f} 秒")
         print(f"training 平均待ち時間：{stats['training_avg_waiting_time']:.4f} 秒")
-        print(f"inference 平均実行時間：{stats['inference_avg_execution_time']:.4f} 秒")
-        print(f"training 平均実行時間：{stats['training_avg_execution_time']:.4f} 秒")
+        print(f"inference 平均サービス時間：{stats['inference_avg_service_time']:.4f} 秒")
+        print(f"training 平均サービス時間：{stats['training_avg_service_time']:.4f} 秒")
         print()
     
     def get_gpu_selection_stats(self):
@@ -197,8 +226,9 @@ class ResultAnalyzer:
         
         # DataFrameで見やすく表示
         df = pd.DataFrame(user_stats)
-        df_display = df[['user_id', 'tier', 'processing_rate', 'total_tasks', 'completed_tasks', 'completion_rate_cutoff', 'final_completion_rate', 'total_waiting_time', 'avg_waiting_time', 'total_work', 'last_completion_time']].copy()
-        df_display.columns = ["ユーザーID", "性能ティア", "処理レート", "発生タスク数", "完了タスク数", "完了率(3600s)(%)", "最終完了率(%)", "待ち時間合計", "平均待ち時間", "総仕事量", "全タスク完了時刻"]
+        df_display = df[['user_id', 'tier', 'processing_rate', 'total_tasks', 'completed_tasks', 'completion_rate_cutoff', 'final_completion_rate', 'avg_tat', 'total_waiting_time', 'avg_waiting_time', 'total_work', 'last_completion_time']].copy()
+        df_display.columns = ["ユーザーID", "性能ティア", "処理レート", "発生タスク数", "完了タスク数", "完了率(3600s)(%)", "最終完了率(%)", "平均TAT", "待ち時間合計", "平均待ち時間", "総仕事量", "全タスク完了時刻"]
+        df_display['平均TAT'] = df_display['平均TAT'].map(lambda x: f"{x:.4f} 秒")
         df_display['平均待ち時間'] = df_display['平均待ち時間'].map(lambda x: f"{x:.4f} 秒")
         df_display['待ち時間合計'] = df_display['待ち時間合計'].map(lambda x: f"{x:.4f} 秒")
         df_display['総仕事量'] = df_display['総仕事量'].map(lambda x: f"{x:.4f} TFLOPs")
@@ -227,6 +257,9 @@ class ResultAnalyzer:
         print(f"平均完了率(3600s)：{df['completion_rate_cutoff'].mean():.2f}%")
         print(f"最高完了率(3600s)：{df['completion_rate_cutoff'].max():.2f}% (User {df.loc[df['completion_rate_cutoff'].idxmax(), 'user_id']:.0f})")
         print(f"最低完了率(3600s)：{df['completion_rate_cutoff'].min():.2f}% (User {df.loc[df['completion_rate_cutoff'].idxmin(), 'user_id']:.0f})")
+        print(f"平均TAT：{df['avg_tat'].mean():.4f} 秒")
+        print(f"最小TAT：{df['avg_tat'].min():.4f} 秒 (User {df.loc[df['avg_tat'].idxmin(), 'user_id']:.0f})")
+        print(f"最大TAT：{df['avg_tat'].max():.4f} 秒 (User {df.loc[df['avg_tat'].idxmax(), 'user_id']:.0f})")
         print(f"平均待ち時間：{df['avg_waiting_time'].mean():.4f} 秒")
         print(f"最小待ち時間：{df['avg_waiting_time'].min():.4f} 秒 (User {df.loc[df['avg_waiting_time'].idxmin(), 'user_id']:.0f})")
         print(f"最大待ち時間：{df['avg_waiting_time'].max():.4f} 秒 (User {df.loc[df['avg_waiting_time'].idxmax(), 'user_id']:.0f})")

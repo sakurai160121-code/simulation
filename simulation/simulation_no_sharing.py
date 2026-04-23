@@ -33,6 +33,8 @@ class Simulator:
         self.current_time = 0.0
         self.all_tasks = []  # シミュレーション中に発生したすべてのタスク
         self.task_patterns = task_patterns or {}  # タスク発生パターン
+        self.job_size_none_count = 0
+        self.job_size_fallback_count = 0
         
     def initialize(self):
         """ユーザーとGPUを初期化"""
@@ -64,16 +66,43 @@ class Simulator:
     def schedule_event(self, time, event_type, data):
         """イベントをスケジュール"""
         heapq.heappush(self.event_queue, (time, event_type, data))
+
+    def resolve_task_profile(self, user_id, task_index):
+        """到着順インデックスで task_type と job_size を解決する。"""
+        user_id_str = str(user_id)
+        task_type = "inference"
+        job_size = None
+
+        user_types = self.task_patterns.get("types", {}).get(user_id_str, {})
+        user_sizes = self.task_patterns.get("sizes", {}).get(user_id_str, {})
+        type_values = list(user_types.values())
+        size_values = list(user_sizes.values())
+
+        if task_index < len(type_values):
+            task_type = type_values[task_index]
+        if task_index < len(size_values):
+            job_size = size_values[task_index]
+
+        if job_size is None:
+            self.job_size_none_count += 1
+            job_size = EXPECTED_TASK_SIZE.get(task_type, EXPECTED_TASK_SIZE["inference"])
+            self.job_size_fallback_count += 1
+
+        return task_type, float(job_size)
     
     def process_task_arrival(self, user_id):
         """タスク到着イベント処理"""
         user = self.users[user_id]
-        task_type = self.task_patterns.get("types", {}).get(str(user_id), {}).get(str(self.current_time), "inference")
+        task_index = user.task_count
+        task_type, job_size = self.resolve_task_profile(user_id, task_index)
         task = user.create_task(self.current_time, task_type=task_type)
+        task.job_size = job_size
+        task.total_work = job_size
         self.all_tasks.append(task)
         
         # タスクをユーザーのGPUに割り当て
         task.assigned_gpu = user.gpu
+        task.assigned_time = self.current_time  # GPU割り当て時刻
         
         # GPUが空いていたら即座に処理開始、そうでなければキューに追加
         if user.gpu.current_task is None:
@@ -92,18 +121,21 @@ class Simulator:
     
     def start_task_on_gpu(self, gpu, task):
         """GPUでタスクを開始"""
-        task.start_time = self.current_time
+        # 初回のみ最初の実行開始時刻を記録
+        if task.first_execution_start_time is None:
+            task.first_execution_start_time = self.current_time
+        # 最後の実行開始時刻は常に更新（再開時に対応）
+        task.last_execution_start_time = self.current_time
+        task.start_time = self.current_time  # 後方互換性
         gpu.current_task = task
-        
-        # タスクサイズをパターンから取得し、サービス時間を算出
-        sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
-        job_size = sizes.get(str(task.arrival_time))
-        if job_size is None:
-            # パターン取得失敗時はタスク種別の期待値でフォールバック
-            job_size = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
 
-        # 合計仕事量を保持
-        task.total_work = job_size
+        job_size = task.job_size
+        if job_size is None:
+            self.job_size_none_count += 1
+            job_size = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
+            task.job_size = job_size
+            task.total_work = job_size
+            self.job_size_fallback_count += 1
 
         service_time = job_size / gpu.processing_rate
         

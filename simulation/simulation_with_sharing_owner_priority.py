@@ -39,6 +39,8 @@ class SimulatorWithOwnerPriority:
         self.all_tasks = []  # シミュレーション中に発生したすべてのタスク
         self.task_patterns = task_patterns or {}  # タスク発生パターン
         self.participating_users = participating_users if participating_users is not None else list(range(NUM_USERS))
+        self.job_size_none_count = 0
+        self.job_size_fallback_count = 0
         
     def initialize(self):
         """ユーザーと共有GPUプールを初期化"""
@@ -58,6 +60,15 @@ class SimulatorWithOwnerPriority:
             gpu = GPU(gpu_id=user_id, processing_rate=processing_rate)
             self.shared_gpus.append(gpu)
             self.gpu_owner[user_id] = user_id  # 所有者を記録
+
+        # ACP常駐GPUを共有プールへ追加（所有者なし）
+        for acp_spec in config.get_acp_resident_gpu_specs():
+            gpu = GPU(
+                gpu_id=acp_spec["gpu_id"],
+                processing_rate=acp_spec["processing_rate"],
+            )
+            self.shared_gpus.append(gpu)
+            self.gpu_owner[gpu.gpu_id] = acp_spec.get("owner")
         
         # ユーザー作成（GPUは割り当てない、共有プールを使う）
         for user_id in range(NUM_USERS):
@@ -76,13 +87,38 @@ class SimulatorWithOwnerPriority:
     def schedule_event(self, time, event_type, data):
         """イベントをスケジュール"""
         heapq.heappush(self.event_queue, (time, event_type, data))
+
+    def resolve_task_profile(self, user_id, task_index):
+        """到着順インデックスで task_type と job_size を解決する。"""
+        user_id_str = str(user_id)
+        task_type = "inference"
+        job_size = None
+
+        user_types = self.task_patterns.get("types", {}).get(user_id_str, {})
+        user_sizes = self.task_patterns.get("sizes", {}).get(user_id_str, {})
+        type_values = list(user_types.values())
+        size_values = list(user_sizes.values())
+
+        if task_index < len(type_values):
+            task_type = type_values[task_index]
+        if task_index < len(size_values):
+            job_size = size_values[task_index]
+
+        if job_size is None:
+            self.job_size_none_count += 1
+            job_size = EXPECTED_TASK_SIZE.get(task_type, EXPECTED_TASK_SIZE["inference"])
+            self.job_size_fallback_count += 1
+
+        return task_type, float(job_size)
     
     def get_owner_utilization(self, gpu):
         """
         GPU所有者の稼働率を計算
         ρ_own = λ_own · s̄_own / μ
         """
-        owner_id = self.gpu_owner[gpu.gpu_id]
+        owner_id = self.gpu_owner.get(gpu.gpu_id)
+        if owner_id is None:
+            return 0.0
         owner_lambda = config.ARRIVAL_RATES.get(str(owner_id), ARRIVAL_RATE)
         owner_task_size_mean = get_user_expected_task_size(owner_id)
         
@@ -95,7 +131,8 @@ class SimulatorWithOwnerPriority:
         自分のGPU: 通常の性能
         他人のGPU: μ_eff = μ / (1 + ρ_own)
         """
-        if self.gpu_owner[gpu.gpu_id] == user_id:
+        owner_id = self.gpu_owner.get(gpu.gpu_id)
+        if owner_id is None or owner_id == user_id:
             # 自分のGPU：割り込み可能なので通常性能
             return gpu.processing_rate
         else:
@@ -115,7 +152,7 @@ class SimulatorWithOwnerPriority:
             current_remaining = max(0, gpu.finish_time - self.current_time)
         
         # 自分のキュー内タスク処理時間
-        owner_id = self.gpu_owner[gpu.gpu_id]
+        owner_id = self.gpu_owner.get(gpu.gpu_id)
         user_queue_time = 0
         for task in gpu.task_queue:
             if task.user_id == user_id:
@@ -160,7 +197,7 @@ class SimulatorWithOwnerPriority:
         earliest_time = float('inf')
         
         for gpu in self.shared_gpus:
-            if self.gpu_owner[gpu.gpu_id] == user_id:
+            if self.gpu_owner.get(gpu.gpu_id) == user_id:
                 # 自分のGPU
                 completion_time = self.predict_completion_time_own_gpu(gpu, user_id, new_task_type)
             else:
@@ -176,8 +213,11 @@ class SimulatorWithOwnerPriority:
     def process_task_arrival(self, user_id):
         """タスク到着イベント処理"""
         user = self.users[user_id]
-        task_type = self.task_patterns.get("types", {}).get(str(user_id), {}).get(str(self.current_time), "inference")
+        task_index = user.task_count
+        task_type, job_size = self.resolve_task_profile(user_id, task_index)
         task = user.create_task(self.current_time, task_type=task_type)
+        task.job_size = job_size
+        task.total_work = job_size
         self.all_tasks.append(task)
         
         # 最適なGPUを選択（到着タスクのtypeを予測へ反映）
@@ -187,8 +227,9 @@ class SimulatorWithOwnerPriority:
             return
         
         task.assigned_gpu = best_gpu
+        task.assigned_time = self.current_time  # GPU割り当て時刻
         # GPU所有者IDを渡して、所有者のタスクを優先化
-        owner_id = self.gpu_owner[best_gpu.gpu_id]
+        owner_id = self.gpu_owner.get(best_gpu.gpu_id)
         best_gpu.add_task(task, owner_id=owner_id)
         
         # GPUが空いていたら即座に処理開始
@@ -209,17 +250,25 @@ class SimulatorWithOwnerPriority:
         # 安全チェック：GPUが空いていることを確認
         if gpu.current_task is not None:
             raise RuntimeError(f"GPU {gpu.gpu_id} already has a running task {gpu.current_task.task_id}")
+
+        if task in gpu.task_queue:
+            gpu.task_queue.remove(task)
         
-        task.start_time = self.current_time
+        # 初回のみ最初の実行開始時刻を記録
+        if task.first_execution_start_time is None:
+            task.first_execution_start_time = self.current_time
+        # 最後の実行開始時刻は常に更新（再開時に対応）
+        task.last_execution_start_time = self.current_time
+        task.start_time = self.current_time  # 後方互換性
         gpu.current_task = task
         
-        # 処理時間を計算
-        sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
-        job_size = sizes.get(str(task.arrival_time))
+        job_size = task.job_size
         if job_size is None:
+            self.job_size_none_count += 1
             job_size = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
+            task.job_size = job_size
+            self.job_size_fallback_count += 1
 
-        # 合計仕事量を保持
         task.total_work = job_size
         
         # 実際の処理レート（所有者でない場合は実効性能は適用しない、実行開始時点では割り込まれていないため）
@@ -253,6 +302,11 @@ class SimulatorWithOwnerPriority:
         # タスクIDが一致しない場合は古いイベントなので無視
         if task.task_id != expected_task_id:
             return
+        
+        # 実行区間を累積に加算
+        if task.last_execution_start_time is not None:
+            elapsed = max(0.0, self.current_time - task.last_execution_start_time)
+            task.accumulated_service_time += elapsed
         
         task.completion_time = self.current_time
         gpu.current_task = None

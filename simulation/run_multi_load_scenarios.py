@@ -63,7 +63,7 @@ def set_current_scenario(scenario_name, scenario):
 
 
 def compute_total_gpu_capacity():
-    """全GPUの総処理能力 C = Σμ_u"""
+    """ユーザー所有GPUのみの総処理能力 C = Σμ_u"""
     total_capacity = 0.0
     for tier_name, users in config.GPU_TIER_ASSIGNMENT.items():
         tier_capacity = config.GPU_PERFORMANCE_LEVELS[tier_name]
@@ -132,11 +132,23 @@ def compute_group_avg_tat(tasks, user_group):
     group_tasks = [t for t in tasks if t.user_id in user_group and t.completion_time is not None]
     if not group_tasks:
         return 0.0
-    total_tat = sum(t.get_waiting_time() for t in group_tasks)
+    total_tat = sum(t.get_turnaround_time() for t in group_tasks if t.get_turnaround_time() is not None)
     return total_tat / len(group_tasks)
 
 
-def run_simulation_at_load(load_rate, scenario_name, scenario, seed_offset):
+def count_acp_assigned_tasks(tasks):
+    """ACP常駐GPUへ割り当てられたタスク数を返す。"""
+    count = 0
+    for task in tasks:
+        assigned_gpu = getattr(task, "assigned_gpu", None)
+        if assigned_gpu is None:
+            continue
+        if str(assigned_gpu.gpu_id).startswith("acp_"):
+            count += 1
+    return count
+
+
+def run_simulation_at_load(load_rate, scenario_name, scenario, seed_offset, show_acp_counts=True):
     """指定シナリオ・負荷率で4方式を実行"""
     print(f"\n{'='*80}")
     print(f"[{scenario_name}] 負荷率 {load_rate:.1f} のシミュレーション開始")
@@ -163,6 +175,7 @@ def run_simulation_at_load(load_rate, scenario_name, scenario, seed_offset):
         "mid": {},
         "high": {}
     }
+    user_avg_tat_results = {}
     actual_load_rate = None
 
     # 共有なし
@@ -171,11 +184,16 @@ def run_simulation_at_load(load_rate, scenario_name, scenario, seed_offset):
     tasks = sim.run()
     analyzer = ResultAnalyzer(tasks, config.NUM_USERS, mode="no_sharing")
     stats = analyzer.get_system_statistics()
-    results["共有なし"] = stats['avg_waiting_time']
-    group_results["low"]["共有なし"] = compute_group_avg_tat(tasks, LOW_PERF_USERS)
-    group_results["mid"]["共有なし"] = compute_group_avg_tat(tasks, MID_PERF_USERS)
-    group_results["high"]["共有なし"] = compute_group_avg_tat(tasks, HIGH_PERF_USERS)
-    print(f"    -> 平均TAT: {stats['avg_waiting_time']:.2f}秒")
+    user_stats = analyzer.get_user_statistics()
+    user_avg_tat_results["No Sharing"] = {str(item["user_id"]): float(item["avg_tat"]) for item in user_stats}
+    results["No Sharing"] = stats['avg_tat']
+    group_results["low"]["No Sharing"] = compute_group_avg_tat(tasks, LOW_PERF_USERS)
+    group_results["mid"]["No Sharing"] = compute_group_avg_tat(tasks, MID_PERF_USERS)
+    group_results["high"]["No Sharing"] = compute_group_avg_tat(tasks, HIGH_PERF_USERS)
+    print(f"    -> 平均TAT: {stats['avg_tat']:.2f}秒")
+    print(f"    -> 平均待ち時間: {stats['avg_waiting_time']:.2f}秒")
+    print(f"    -> 平均サービス時間: {stats['avg_service_time']:.2f}秒")
+    print(f"    -> 平均割り当て遅延: {stats['avg_assignment_delay']:.2f}秒")
 
     if actual_load_rate is None:
         total_capacity = compute_total_gpu_capacity()
@@ -188,11 +206,18 @@ def run_simulation_at_load(load_rate, scenario_name, scenario, seed_offset):
     tasks = sim.run()
     analyzer = ResultAnalyzer(tasks, config.NUM_USERS, mode="with_sharing")
     stats = analyzer.get_system_statistics()
-    results["FCFS"] = stats['avg_waiting_time']
+    user_stats = analyzer.get_user_statistics()
+    user_avg_tat_results["FCFS"] = {str(item["user_id"]): float(item["avg_tat"]) for item in user_stats}
+    results["FCFS"] = stats['avg_tat']
     group_results["low"]["FCFS"] = compute_group_avg_tat(tasks, LOW_PERF_USERS)
     group_results["mid"]["FCFS"] = compute_group_avg_tat(tasks, MID_PERF_USERS)
     group_results["high"]["FCFS"] = compute_group_avg_tat(tasks, HIGH_PERF_USERS)
-    print(f"    -> 平均TAT: {stats['avg_waiting_time']:.2f}秒")
+    if show_acp_counts:
+        print(f"    -> ACP割当タスク数: {count_acp_assigned_tasks(tasks)}")
+    print(f"    -> 平均TAT: {stats['avg_tat']:.2f}秒")
+    print(f"    -> 平均待ち時間: {stats['avg_waiting_time']:.2f}秒")
+    print(f"    -> 平均サービス時間: {stats['avg_service_time']:.2f}秒")
+    print(f"    -> 平均割り当て遅延: {stats['avg_assignment_delay']:.2f}秒")
 
     # 所有者優先
     print("\n  所有者優先...")
@@ -200,11 +225,18 @@ def run_simulation_at_load(load_rate, scenario_name, scenario, seed_offset):
     tasks = sim.run()
     analyzer = ResultAnalyzer(tasks, config.NUM_USERS, mode="with_sharing_owner_priority")
     stats = analyzer.get_system_statistics()
-    results["所有者優先"] = stats['avg_waiting_time']
-    group_results["low"]["所有者優先"] = compute_group_avg_tat(tasks, LOW_PERF_USERS)
-    group_results["mid"]["所有者優先"] = compute_group_avg_tat(tasks, MID_PERF_USERS)
-    group_results["high"]["所有者優先"] = compute_group_avg_tat(tasks, HIGH_PERF_USERS)
-    print(f"    -> 平均TAT: {stats['avg_waiting_time']:.2f}秒")
+    user_stats = analyzer.get_user_statistics()
+    user_avg_tat_results["Owner Priority"] = {str(item["user_id"]): float(item["avg_tat"]) for item in user_stats}
+    results["Owner Priority"] = stats['avg_tat']
+    group_results["low"]["Owner Priority"] = compute_group_avg_tat(tasks, LOW_PERF_USERS)
+    group_results["mid"]["Owner Priority"] = compute_group_avg_tat(tasks, MID_PERF_USERS)
+    group_results["high"]["Owner Priority"] = compute_group_avg_tat(tasks, HIGH_PERF_USERS)
+    if show_acp_counts:
+        print(f"    -> ACP割当タスク数: {count_acp_assigned_tasks(tasks)}")
+    print(f"    -> 平均TAT: {stats['avg_tat']:.2f}秒")
+    print(f"    -> 平均待ち時間: {stats['avg_waiting_time']:.2f}秒")
+    print(f"    -> 平均サービス時間: {stats['avg_service_time']:.2f}秒")
+    print(f"    -> 平均割り当て遅延: {stats['avg_assignment_delay']:.2f}秒")
 
     # プリエンプティブ方式
     print("\n  プリエンプティブ方式...")
@@ -212,42 +244,49 @@ def run_simulation_at_load(load_rate, scenario_name, scenario, seed_offset):
     tasks = sim.run()
     analyzer = ResultAnalyzer(tasks, config.NUM_USERS, mode="with_sharing_owner_preemption")
     stats = analyzer.get_system_statistics()
-    results["プリエンプティブ方式"] = stats['avg_waiting_time']
-    group_results["low"]["プリエンプティブ方式"] = compute_group_avg_tat(tasks, LOW_PERF_USERS)
-    group_results["mid"]["プリエンプティブ方式"] = compute_group_avg_tat(tasks, MID_PERF_USERS)
-    group_results["high"]["プリエンプティブ方式"] = compute_group_avg_tat(tasks, HIGH_PERF_USERS)
-    print(f"    -> 平均TAT: {stats['avg_waiting_time']:.2f}秒")
+    user_stats = analyzer.get_user_statistics()
+    user_avg_tat_results["Preemptive"] = {str(item["user_id"]): float(item["avg_tat"]) for item in user_stats}
+    results["Preemptive"] = stats['avg_tat']
+    group_results["low"]["Preemptive"] = compute_group_avg_tat(tasks, LOW_PERF_USERS)
+    group_results["mid"]["Preemptive"] = compute_group_avg_tat(tasks, MID_PERF_USERS)
+    group_results["high"]["Preemptive"] = compute_group_avg_tat(tasks, HIGH_PERF_USERS)
+    if show_acp_counts:
+        print(f"    -> ACP割当タスク数: {count_acp_assigned_tasks(tasks)}")
+    print(f"    -> 平均TAT: {stats['avg_tat']:.2f}秒")
+    print(f"    -> 平均待ち時間: {stats['avg_waiting_time']:.2f}秒")
+    print(f"    -> 平均サービス時間: {stats['avg_service_time']:.2f}秒")
+    print(f"    -> 平均割り当て遅延: {stats['avg_assignment_delay']:.2f}秒")
 
-    return results, group_results, actual_load_rate
+    return results, group_results, actual_load_rate, user_avg_tat_results
 
 
 def plot_scenario_results(output_dir, scenario_name, target_load_rates, scenario_results, group_scenario_results):
     """1シナリオ分のグラフを保存"""
     groups = [
-        ("全体平均", None, "all"),
-        ("低性能GPU", "low", "low"),
-        ("中性能GPU", "mid", "mid"),
-        ("高性能GPU", "high", "high"),
+        ("Overall", None, "all"),
+        ("Low-Performance GPUs", "low", "low"),
+        ("Mid-Performance GPUs", "mid", "mid"),
+        ("High-Performance GPUs", "high", "high"),
     ]
 
     scenario_colors = {
-        "共有なし": "#9467bd",
+        "No Sharing": "#9467bd",
         "FCFS": "#ff7f0e",
-        "所有者優先": "#1f77b4",
-        "プリエンプティブ方式": "#2ca02c"
+        "Owner Priority": "#1f77b4",
+        "Preemptive": "#2ca02c"
     }
     scenario_markers = {
-        "共有なし": "o",
+        "No Sharing": "o",
         "FCFS": "s",
-        "所有者優先": "^",
-        "プリエンプティブ方式": "D"
+        "Owner Priority": "^",
+        "Preemptive": "D"
     }
 
     title_prefix = SCENARIO_TITLES.get(scenario_name, scenario_name)
 
     for group_name, group_key, file_suffix in groups:
         fig, ax = plt.subplots(figsize=(8, 6))
-        scenarios_to_plot = ["共有なし", "FCFS", "所有者優先", "プリエンプティブ方式"]
+        scenarios_to_plot = ["No Sharing", "FCFS", "Owner Priority", "Preemptive"]
 
         for scenario_label in scenarios_to_plot:
             if group_key is None:
@@ -267,8 +306,8 @@ def plot_scenario_results(output_dir, scenario_name, target_load_rates, scenario
             )
 
         ax.set_title(f"{title_prefix} | {group_name}", fontsize=13, fontweight='bold')
-        ax.set_xlabel('システム負荷率', fontsize=16, fontweight='bold')
-        ax.set_ylabel('平均TAT（秒）', fontsize=16, fontweight='bold')
+        ax.set_xlabel('System Load', fontsize=16, fontweight='bold')
+        ax.set_ylabel('Average TAT (s)', fontsize=16, fontweight='bold')
         ax.set_xticks(target_load_rates)
         ax.set_yscale('log', base=10)
         ax.tick_params(labelsize=12)
@@ -301,20 +340,20 @@ def main():
             os.makedirs(scenario_output_dir, exist_ok=True)
 
             scenario_results = {
-                "共有なし": [],
+                "No Sharing": [],
                 "FCFS": [],
-                "所有者優先": [],
-                "プリエンプティブ方式": [],
+                "Owner Priority": [],
+                "Preemptive": [],
             }
             group_scenario_results = {
-                "low": {"共有なし": [], "FCFS": [], "所有者優先": [], "プリエンプティブ方式": []},
-                "mid": {"共有なし": [], "FCFS": [], "所有者優先": [], "プリエンプティブ方式": []},
-                "high": {"共有なし": [], "FCFS": [], "所有者優先": [], "プリエンプティブ方式": []},
+                "low": {"No Sharing": [], "FCFS": [], "Owner Priority": [], "Preemptive": []},
+                "mid": {"No Sharing": [], "FCFS": [], "Owner Priority": [], "Preemptive": []},
+                "high": {"No Sharing": [], "FCFS": [], "Owner Priority": [], "Preemptive": []},
             }
             actual_load_rates = []
 
             for idx, load_rate in enumerate(target_load_rates):
-                results, group_results, actual_load = run_simulation_at_load(
+                results, group_results, actual_load, user_avg_tat = run_simulation_at_load(
                     load_rate,
                     scenario_name,
                     scenario,
@@ -326,7 +365,7 @@ def main():
                     scenario_results[scenario_label].append(avg_wait)
 
                 for group_key in ["low", "mid", "high"]:
-                    for scenario_label in ["共有なし", "FCFS", "所有者優先", "プリエンプティブ方式"]:
+                    for scenario_label in ["No Sharing", "FCFS", "Owner Priority", "Preemptive"]:
                         group_scenario_results[group_key][scenario_label].append(group_results[group_key][scenario_label])
 
             plot_scenario_results(
@@ -354,12 +393,12 @@ def main():
             # CSV保存
             import pandas as pd
             df_results = pd.DataFrame({
-                "負荷率（設定）": target_load_rates,
-                "負荷率（実測）": actual_load_rates,
-                "共有なし": scenario_results["共有なし"],
+                "Target Load": target_load_rates,
+                "Measured Load": actual_load_rates,
+                "No Sharing": scenario_results["No Sharing"],
                 "FCFS": scenario_results["FCFS"],
-                "所有者優先": scenario_results["所有者優先"],
-                "プリエンプティブ方式": scenario_results["プリエンプティブ方式"],
+                "Owner Priority": scenario_results["Owner Priority"],
+                "Preemptive": scenario_results["Preemptive"],
             })
             csv_path = os.path.join(scenario_output_dir, 'load_rate_results.csv')
             df_results.to_csv(csv_path, index=False, encoding='utf-8-sig')

@@ -31,6 +31,63 @@ GPU_PERFORMANCE_LEVELS = {
     "tier9": 311.84,      # A100
 }
 
+# ACP常駐GPU（共有プールに最初から存在する常設GPU）
+# 将来はこのプロファイル配列を増やすことで複数性能に拡張できる。
+ACP_RESIDENT_GPU_COUNT = 0
+ACP_RESIDENT_GPU_RATE = 180.5
+ACP_RESIDENT_GPU_PROFILES = [
+    {
+        "count": ACP_RESIDENT_GPU_COUNT,
+        "processing_rate": ACP_RESIDENT_GPU_RATE,
+    },
+]
+
+
+def set_acp_resident_gpu_profiles(count: int, processing_rates: list[float] | None = None) -> None:
+    """ACP常駐GPUの台数と個別性能を設定する。"""
+    global ACP_RESIDENT_GPU_COUNT, ACP_RESIDENT_GPU_RATE, ACP_RESIDENT_GPU_PROFILES
+
+    normalized_count = max(0, int(count))
+    rates = [float(rate) for rate in (processing_rates or [])]
+    if normalized_count == 0:
+        ACP_RESIDENT_GPU_COUNT = 0
+        ACP_RESIDENT_GPU_RATE = float(rates[-1]) if rates else ACP_RESIDENT_GPU_RATE
+        ACP_RESIDENT_GPU_PROFILES = []
+        return
+
+    if not rates:
+        rates = [float(ACP_RESIDENT_GPU_RATE)] * normalized_count
+    elif len(rates) < normalized_count:
+        rates = rates + [rates[-1]] * (normalized_count - len(rates))
+    else:
+        rates = rates[:normalized_count]
+
+    ACP_RESIDENT_GPU_COUNT = normalized_count
+    ACP_RESIDENT_GPU_RATE = float(rates[0])
+    ACP_RESIDENT_GPU_PROFILES = [
+        {"count": 1, "processing_rate": rate}
+        for rate in rates
+    ]
+
+
+def get_acp_resident_gpu_specs():
+    """ACP常駐GPUの個別スペック一覧を返す。"""
+    specs = []
+    running_index = 0
+    for profile in ACP_RESIDENT_GPU_PROFILES:
+        count = int(profile.get("count", 0))
+        processing_rate = float(profile.get("processing_rate", ACP_RESIDENT_GPU_RATE))
+        for _ in range(count):
+            specs.append(
+                {
+                    "gpu_id": f"acp_{running_index}",
+                    "processing_rate": processing_rate,
+                    "owner": None,
+                }
+            )
+            running_index += 1
+    return specs
+
 # タスクサイズ（仕事量）の平均値 [TFLOPS]
 # 全ユーザー: YOLOv7-w6
 TASK_SIZE_MEANS = {
@@ -158,13 +215,14 @@ GPU_TIER_ASSIGNMENT = {
     "tier8": [7, 16],     # User 7（1000バッチ）, User 16（2000バッチ）
     "tier9": [8, 17],     # User 8（1000バッチ）, User 17（2000バッチ）
 }
-
 # シミュレーション終了時刻
 SIMULATION_TIME = 8640000  # 1時間（3600秒）
 
 # ランダムシード（再現性のため）
 RANDOM_SEED = 42
 
-# プリエンプト時の再開・マイグレーションオーバーヘッド係数（大きいほど他人GPU選択が不利）
-INTERRUPTION_OVERHEAD_FACTOR = 0.2
+# プリエンプト時の再開・マイグレーションオーバーヘッド係数（タスク種別ごと）
+# 大きいほど他人GPU選択が不利
+INTERRUPTION_OVERHEAD_FACTOR_INFERENCE = 0.2
+INTERRUPTION_OVERHEAD_FACTOR_TRAINING = 0.2
 

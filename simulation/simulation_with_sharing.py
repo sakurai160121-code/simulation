@@ -37,6 +37,8 @@ class SimulatorWithSharing:
         self.all_tasks = []  # シミュレーション中に発生したすべてのタスク
         self.task_patterns = task_patterns or {}  # タスク発生パターン
         self.participating_users = participating_users if participating_users is not None else list(range(NUM_USERS))
+        self.job_size_none_count = 0
+        self.job_size_fallback_count = 0
         
     def initialize(self):
         """ユーザーと共有GPUプールを初期化"""
@@ -55,6 +57,14 @@ class SimulatorWithSharing:
             # GPU を共有プールに追加
             gpu = GPU(gpu_id=user_id, processing_rate=processing_rate)
             self.shared_gpus.append(gpu)
+
+        # ACP常駐GPUを共有プールへ追加
+        for acp_spec in config.get_acp_resident_gpu_specs():
+            gpu = GPU(
+                gpu_id=acp_spec["gpu_id"],
+                processing_rate=acp_spec["processing_rate"],
+            )
+            self.shared_gpus.append(gpu)
         
         # ユーザー作成（GPUは割り当てない、共有プールを使う）
         for user_id in range(NUM_USERS):
@@ -72,6 +82,29 @@ class SimulatorWithSharing:
     def schedule_event(self, time, event_type, data):
         """イベントをスケジュール"""
         heapq.heappush(self.event_queue, (time, event_type, data))
+
+    def resolve_task_profile(self, user_id, task_index):
+        """到着順インデックスで task_type と job_size を解決する。"""
+        user_id_str = str(user_id)
+        task_type = "inference"
+        job_size = None
+
+        user_types = self.task_patterns.get("types", {}).get(user_id_str, {})
+        user_sizes = self.task_patterns.get("sizes", {}).get(user_id_str, {})
+        type_values = list(user_types.values())
+        size_values = list(user_sizes.values())
+
+        if task_index < len(type_values):
+            task_type = type_values[task_index]
+        if task_index < len(size_values):
+            job_size = size_values[task_index]
+
+        if job_size is None:
+            self.job_size_none_count += 1
+            job_size = EXPECTED_TASK_SIZE.get(task_type, EXPECTED_TASK_SIZE["inference"])
+            self.job_size_fallback_count += 1
+
+        return task_type, float(job_size)
     
     def predict_completion_time(self, gpu, new_task_type):
         """
@@ -94,10 +127,12 @@ class SimulatorWithSharing:
     
     def get_service_time(self, gpu, task):
         """タスクサイズを取得し、GPU処理レートでサービス時間を計算"""
-        sizes = self.task_patterns.get("sizes", {}).get(str(task.user_id), {})
-        job_size = sizes.get(str(task.arrival_time))
+        job_size = task.job_size
         if job_size is None:
+            self.job_size_none_count += 1
             job_size = EXPECTED_TASK_SIZE.get(task.task_type, EXPECTED_TASK_SIZE["inference"])
+            task.job_size = job_size
+            self.job_size_fallback_count += 1
         # 合計仕事量を保持
         task.total_work = job_size
         return job_size / gpu.processing_rate
@@ -124,8 +159,11 @@ class SimulatorWithSharing:
     def process_task_arrival(self, user_id):
         """タスク到着イベント処理"""
         user = self.users[user_id]
-        task_type = self.task_patterns.get("types", {}).get(str(user_id), {}).get(str(self.current_time), "inference")
+        task_index = user.task_count
+        task_type, job_size = self.resolve_task_profile(user_id, task_index)
         task = user.create_task(self.current_time, task_type=task_type)
+        task.job_size = job_size
+        task.total_work = job_size
         self.all_tasks.append(task)
         
         # 最適なGPUを選択（到着タスクのtypeを予測へ反映）
@@ -135,6 +173,7 @@ class SimulatorWithSharing:
             return
         
         task.assigned_gpu = best_gpu
+        task.assigned_time = self.current_time  # GPU割り当て時刻
         best_gpu.add_task(task)
         
         # GPUが空いていたら即座に処理開始
@@ -152,7 +191,14 @@ class SimulatorWithSharing:
     
     def start_task_on_gpu(self, gpu, task):
         """GPUでタスクを開始"""
-        task.start_time = self.current_time
+        if task in gpu.task_queue:
+            gpu.task_queue.remove(task)
+        # 初回のみ最初の実行開始時刻を記録
+        if task.first_execution_start_time is None:
+            task.first_execution_start_time = self.current_time
+        # 最後の実行開始時刻は常に更新（再開時に対応）
+        task.last_execution_start_time = self.current_time
+        task.start_time = self.current_time  # 後方互換性
         gpu.current_task = task
         
         # 処理時間をパターンから取得
@@ -178,6 +224,12 @@ class SimulatorWithSharing:
         
         # 現在のタスクを完了
         task = gpu.current_task
+        
+        # 実行区間を累積に加算
+        if task.last_execution_start_time is not None:
+            elapsed = max(0.0, self.current_time - task.last_execution_start_time)
+            task.accumulated_service_time += elapsed
+        
         task.completion_time = self.current_time
         gpu.current_task = None
         
