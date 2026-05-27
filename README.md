@@ -1,180 +1,169 @@
-# シミュレーション（GPU共有スケジューリング評価）
+# Air Computing Pool (ACP) — GPU Sharing Simulation
 
-本リポジトリは、18ユーザー・9ティアGPU環境を対象に、GPU共有ポリシーの違いがタスク応答時間（TAT）・完了率・参加行動に与える影響を評価するためのシミュレーションコードです。
+Campus-scale GPU sharing simulator for evaluating scheduling policies under heterogeneous workloads.  
+Compares **No Sharing / FCFS / Owner Priority / Preemptive** across load levels, workload mixes, and participation incentives.
 
-## 目的
+---
 
-- 共有方式ごとの性能差を定量比較する
-- 負荷率を段階的に変化させたときの傾向を確認する
-- 反復判定により、ユーザーの共有参加/不参加がどのように収束するかを確認する
+## Overview
 
-## 比較対象の方式
+| Feature | Detail |
+|---|---|
+| Users | 18 (6 Low / 6 Mid / 6 High tier) |
+| GPU tiers | 9 levels (GTX 1650 → A100) |
+| Scheduling methods | No Sharing, FCFS, Owner Priority, Preemptive |
+| Key metric | Turn-Around Time (TAT) per user / tier group |
+| Participation model | Iterative rational-agent decision (join if shared TAT ≤ standalone TAT) |
 
-- 共有なし（各ユーザーが自GPUのみ利用）
-- FCFS（先着順共有）
-- 所有者優先
-- 所有者優先 + プリエンプティブ方式
+---
 
-## 評価指標
+## Repository Structure
 
-- 平均待ち時間（平均TAT）  
-  各タスクの `completion_time - arrival_time` の平均
-- タスク完了率  
-  観測時間内に完了したタスク割合
-- Makespan  
-  全完了タスクの最終完了時刻
-- 参加者数推移（反復最適化時）  
-  反復ごとの参加ユーザー数、および低/中/高性能グループ別参加数
+```
+simulation/
+├── config.py                          # Global settings (users, GPU tiers, arrival rates)
+├── definitions.py                     # Task / GPU / User data classes
+├── task_patterns.py                   # Task arrival & size generation (Poisson + log-normal)
+│
+├── simulation_no_sharing.py           # Baseline: each user uses own GPU only
+├── simulation_with_sharing.py         # FCFS sharing
+├── simulation_with_sharing_owner_priority.py    # Owner-priority sharing
+├── simulation_with_sharing_owner_preemption.py  # Preemptive owner-priority sharing
+│
+├── simulation_iterative_wrapper.py    # Iterative participation optimizer
+│
+├── run_custom_user_arrival_web.py     # Multi-load sweep (called by Streamlit UI)
+├── run_random_hetero_fixed_load_web.py  # Heterogeneous workload sweep (100 trials/load)
+├── run_participation_cascade.py       # Participation cascade at fixed load=0.8
+├── run_hetero_scenarios.py            # 4 heterogeneous workload scenarios
+│
+├── plot_paper_graphs_from_csv.py      # Band plots (mean ± min/max) from trial CSV
+├── plot_paper_figures.py              # Paper-ready PDF figure generation
+│
+└── results.py                         # Statistics & visualization helpers
 
-## リポジトリ構成（主要部分）
-
-- `simulation/` : 実験コード本体
-  - `config.py` : シミュレーション設定（ユーザー数・到着率・GPU性能・バッチ/エポックなど）
-  - `task_patterns.py` : タスク到着時刻・タスクサイズ生成
-  - `definitions.py` : `User` / `GPU` / `Task` 定義
-  - `simulation_*.py` : 各方式のシミュレータ実装
-  - `simulation_iterative_wrapper.py` : 参加判定を含む反復最適化
-  - `results.py` : 統計集計・可視化
-  - `run_all_simulations.py` : 基本比較 + 反復最適化の一括実行
-  - `run_multi_load_scenarios.py` : 負荷率別の4方式比較
-  - `run_multi_load_with_participation.py` : 負荷率別の参加者数分析
-- `simulation/outputs/` : 実験生成物の保存先（画像・CSV・JSON）
-
-## 実験条件（デフォルト）
-
-- ユーザー数: 18
-- GPUティア: 9段階（各ティア2ユーザー）
-- 到着過程: ポアソン過程
-- 既定到着率: `ARRIVAL_RATE = 0.005`
-- シミュレーション時間: `SIMULATION_TIME = 86400`
-
-詳細は `simulation/config.py` を参照してください。
-
-## 実行環境
-
-- Python 3.10 以上
-- Windows + PowerShell で動作確認
-- 使用ライブラリ
-  - `numpy`
-  - `pandas`
-  - `matplotlib`
-
-## セットアップ
-
-1. 仮想環境を作成
-2. 仮想環境を有効化
-3. パッケージをインストール
-
-`requirements.txt` がない場合:
-
-```bash
-pip install numpy pandas matplotlib
+streamlit_app.py                       # Web UI (scenario runner + result viewer)
+requirements.txt
 ```
 
-`requirements.txt` を使う場合:
+---
+
+## Scheduling Methods
+
+| Method | Description |
+|---|---|
+| **No Sharing** | Each user runs tasks only on their own GPU |
+| **FCFS** | Shared pool, first-come-first-served |
+| **Owner Priority** | Owner's tasks always jump ahead of guests |
+| **Preemptive** | Owner's tasks preempt running guest tasks immediately |
+
+**Protection Ratio** = TAT (shared) / TAT (No Sharing).  
+≤ 1.0 means the owner is not disadvantaged by sharing.
+
+---
+
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
-```
-
-## Web表示（ES・ポートフォリオ向け）
-
-ブラウザでシミュレーション実行と結果確認ができる簡易UIを用意しています。
-
-- 実装ファイル: `streamlit_app.py`
-- できること:
-  - シナリオ実行（3メニュー）
-  - 実行ログの表示
-  - 生成された画像/CSV/JSONのブラウザ表示
-
-起動方法（リポジトリのルートで実行）:
-
-```bash
 streamlit run streamlit_app.py
 ```
 
-起動後、ブラウザで以下の2タブを操作できます。
+The web UI provides three execution modes:
 
-- **シミュレーション実行**: 実行メニュー選択 → 実行
-- **結果ビュー**: 出力ファイル選択 → 画像・表・JSONの確認
+| Menu | Script | Description |
+|---|---|---|
+| Load sweep (uniform) | `run_custom_user_arrival_web.py` | 4 methods × multiple load points, 100 trials |
+| Participation cascade | `run_participation_cascade.py` | Fixed load=0.8, iterative rational participation |
+| Hetero workload scenarios | `run_hetero_scenarios.py` | 4 workload mixes × 100 trials |
 
-## 実行手順
+---
 
-以下は `simulation/` ディレクトリで実行します。
+## Running Experiments Directly
 
-### A. 基本比較 + 反復最適化
+All scripts are run from the **repository root** (not from `simulation/`).
 
-```bash
-python run_all_simulations.py
-```
-
-実行内容:
-
-1. タスクパターン生成
-2. 4方式の単発比較
-3. 反復最適化（参加状態更新）
-4. 比較グラフ・表の出力
-
-### B. 負荷率別の方式比較（0.1〜1.0）
+### Load sweep with band plots
 
 ```bash
-python run_multi_load_scenarios.py
+python simulation/run_custom_user_arrival_web.py
 ```
 
-実行内容:
+Outputs to `simulation/outputs/random_hetero_fixed_load/`:
+- `overall_avg_tat_band.png` — system-wide average TAT
+- `low/mid/high_tier_tat_band.png` — per-tier group TAT
+- `protection_ratio_without_fcfs.png` — Tier-9 protection ratio
 
-- 到着率は固定し、バッチサイズ調整で負荷率を制御
-- 各負荷率で4方式を実行
-- 全体/グループ別の平均待ち時間を保存
-
-### C. 負荷率と参加者数の関係分析
+### Participation cascade
 
 ```bash
-python run_multi_load_with_participation.py
+python simulation/run_participation_cascade.py
 ```
 
-実行内容:
+Outputs to `simulation/outputs/participation_cascade/`:
+- `cascade_high_tier.png` — high-tier participation count per iteration (3 methods)
+- `cascade_stacked_3panel.png` — Low/Mid/High stacked bar per scenario
 
-- 反復最適化を負荷率ごとに実行
-- 低性能・中性能・高性能グループ別の参加人数推移を保存
+```bash
+python simulation/run_participation_cascade.py --replot   # regenerate graphs from saved JSON
+```
 
-## 実行時の注意
+### Heterogeneous workload scenarios
 
-- スクリプトは `simulation/` を作業ディレクトリにして実行してください。
-- 既存の出力を残したまま再実行すると、画像やCSVが上書きされます。
-- 再現実験を行う場合は、`RANDOM_SEED` を固定したまま比較してください。
+```bash
+python simulation/run_hetero_scenarios.py
+```
 
-## 出力先
+Runs 4 scenarios × 100 trials each:
 
-- `simulation/outputs/basic_scenarios/` : 基本比較の図
-- `simulation/outputs/iterative_results/` : 反復最適化の図
-- `simulation/outputs/multi_load/` : 負荷率分析の図・CSV・JSON
-- `simulation/outputs/tables/` : テーブル画像
-- `simulation/outputs/user_comparisons/` : ユーザー別比較図
+| Scenario | Training ratio |
+|---|---|
+| `uniform` | All users: 0.3 |
+| `low_heavy` | Low=0.7, Mid=0.3, High=0.1 |
+| `high_heavy` | Low=0.1, Mid=0.3, High=0.7 |
+| `random` | Resampled uniformly per trial |
 
-## 設定変更時の確認ポイント
+Outputs to `simulation/outputs/hetero_scenarios/{scenario}/`:
+- `low/mid/high_tier_tat.png`, `protection_ratio.png`
 
-`simulation/config.py` の変更が主要です。
+---
 
-- `NUM_USERS` : ユーザー数
-- `ARRIVAL_RATE`, `ARRIVAL_RATES` : 到着率
-- `GPU_PERFORMANCE_LEVELS`, `GPU_TIER_ASSIGNMENT` : GPU性能と割当
-- `TASK_SIZE_MEANS`, `BATCH_SIZES`, `EPOCHS` : タスク規模
-- `SIMULATION_TIME` : 観測時間
-- `RANDOM_SEED` : 再現性
+## Output Directories
 
-設定変更時は、`task_patterns.json` を再生成してから比較することを推奨します。
+```
+simulation/outputs/
+├── random_hetero_fixed_load/     # Load sweep results (band plots + CSV)
+├── participation_cascade/        # Cascade simulation graphs + JSON
+└── hetero_scenarios/
+    ├── uniform/
+    ├── low_heavy/
+    ├── high_heavy/
+    └── random/
+```
 
-## よくある調整例
+---
 
-- 負荷を全体的に上げたい  
-  `ARRIVAL_RATE` を上げる、または `BATCH_SIZES` / `EPOCHS` を増やす
-- ユーザー属性を変えたい  
-  `GPU_TIER_ASSIGNMENT` と `GPU_PERFORMANCE_LEVELS` を対応付けて編集
-- 実験時間を短縮したい  
-  `SIMULATION_TIME` を小さくする（比較時は全方式で同一値を使用）
+## Configuration (`simulation/config.py`)
 
-## 備考
+| Parameter | Default | Description |
+|---|---|---|
+| `NUM_USERS` | 18 | Total number of users |
+| `SIMULATION_TIME` | 864000 | Observation window (seconds, = 10 days) |
+| `ARRIVAL_RATE` | auto | Set by load target in each run script |
+| `GPU_PERFORMANCE_LEVELS` | 9 tiers | Relative GPU speed (1.0×–10.0×) |
+| `GPU_TIER_ASSIGNMENT` | dict | Maps tier → list of user IDs |
+| `RANDOM_SEED` | 42 | Global RNG seed for reproducibility |
 
-- 生成物（`simulation/outputs/`、キャッシュ、ログなど）は `.gitignore` で除外設定済み
+Task sizes follow a **log-normal distribution** parameterized by mean and std:
+- Inference: mean=9 580 s, std=7 000 s
+- Training: mean=412 180 s, std=600 000 s
 
+---
+
+## Reproducing Results
+
+1. Set `RANDOM_SEED = 42` in `config.py` (default).
+2. Run the desired script.
+3. Outputs are deterministic for fixed seeds; the `random` hetero scenario uses its own `rng = np.random.default_rng(42)`.
+
+> **Note:** Output files in `simulation/outputs/` are excluded from version control (see `.gitignore`).
