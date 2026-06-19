@@ -1,0 +1,39 @@
+# imgs/ フォルダに入れる画像ファイルの対応表
+# 「コピー元」→「imgs/ 内のファイル名」
+
+# ── section3 (既存) ──────────────────────────────────────────────────
+ACP.drawio.pdf                    → imgs/ACP.drawio.pdf
+drawio (2).pdf                    → imgs/drawio (2).pdf
+
+# ── section4 生成済み PDF (paper_figures) ────────────────────────────
+simulation/outputs/paper_figures/fig1_overall_avg_tat.pdf    → imgs/fig1_overall_avg_tat.pdf
+simulation/outputs/paper_figures/fig2_tier_based_tat.pdf     → imgs/fig2_tier_based_tat.pdf
+simulation/outputs/paper_figures/fig3_tier9_tat.pdf          → imgs/fig3_tier9_tat.pdf
+simulation/outputs/paper_figures/fig4_protection_ratio.pdf   → imgs/fig4_protection_ratio.pdf
+simulation/outputs/paper_figures/fig5_pr_zoom.pdf            → imgs/fig5_pr_zoom.pdf
+simulation/outputs/paper_figures/fig6_user_tat_bar.pdf       → imgs/fig6_user_tat_bar.pdf
+
+# ── section4 cascade PNG ─────────────────────────────────────────────
+simulation/outputs/participation_cascade/cascade_high_tier.png       → imgs/cascade_high_tier.png
+simulation/outputs/participation_cascade/cascade_stacked_3panel.png  → imgs/cascade_stacked_3panel.png
+
+# ── section4 hetero scenarios PNG ────────────────────────────────────
+simulation/outputs/hetero_scenarios/uniform/low_tier_tat.png         → imgs/uniform_low_tier_tat.png
+simulation/outputs/hetero_scenarios/uniform/mid_tier_tat.png         → imgs/uniform_mid_tier_tat.png
+simulation/outputs/hetero_scenarios/uniform/high_tier_tat.png        → imgs/uniform_high_tier_tat.png
+simulation/outputs/hetero_scenarios/uniform/protection_ratio.png     → imgs/uniform_protection_ratio.png
+
+simulation/outputs/hetero_scenarios/low_heavy/low_tier_tat.png       → imgs/low_heavy_low_tier_tat.png
+simulation/outputs/hetero_scenarios/low_heavy/mid_tier_tat.png       → imgs/low_heavy_mid_tier_tat.png
+simulation/outputs/hetero_scenarios/low_heavy/high_tier_tat.png      → imgs/low_heavy_high_tier_tat.png
+simulation/outputs/hetero_scenarios/low_heavy/protection_ratio.png   → imgs/low_heavy_protection_ratio.png
+
+simulation/outputs/hetero_scenarios/high_heavy/low_tier_tat.png      → imgs/high_heavy_low_tier_tat.png
+simulation/outputs/hetero_scenarios/high_heavy/mid_tier_tat.png      → imgs/high_heavy_mid_tier_tat.png
+simulation/outputs/hetero_scenarios/high_heavy/high_tier_tat.png     → imgs/high_heavy_high_tier_tat.png
+simulation/outputs/hetero_scenarios/high_heavy/protection_ratio.png  → imgs/high_heavy_protection_ratio.png
+
+simulation/outputs/hetero_scenarios/random/low_tier_tat.png          → imgs/random_low_tier_tat.png
+simulation/outputs/hetero_scenarios/random/mid_tier_tat.png          → imgs/random_mid_tier_tat.png
+simulation/outputs/hetero_scenarios/random/high_tier_tat.png         → imgs/random_high_tier_tat.png
+simulation/outputs/hetero_scenarios/random/protection_ratio.png      → imgs/random_protection_ratio.png

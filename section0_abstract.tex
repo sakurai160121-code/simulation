@@ -1,0 +1,75 @@
+% ============================================================
+% Abstract
+% ============================================================
+
+\begin{abstract}
+
+With the rapid growth of demand for GPU resources driven by large language
+models and generative AI, efficiently utilizing the heterogeneous GPUs
+distributed across campus research laboratories has become a critical challenge.
+We propose the \emph{Air Computing Pool (ACP)}, a campus GPU sharing platform
+in which researchers contribute their idle GPUs to a shared pool and gain
+access to the entire pool in return.
+The key obstacle to sustaining such a platform is participation incentives:
+under existing first-come-first-served (FCFS) or owner-priority policies,
+high-performance GPU owners experience degraded turnaround time (TAT)
+compared to not sharing at all, causing rational owners to withdraw
+and triggering a system-wide cascade collapse.
+
+% 大規模言語モデルや生成AIの急速な発展に伴うGPU資源需要の拡大を背景に，
+% 学内研究室に分散する異種GPUを効率的に活用することが重要な課題となっている．
+% 本研究では，研究者が遊休GPUを共有プールに提供し，プール全体にアクセスできる
+% 学内GPU共有基盤\emph{Air Computing Pool（ACP）}を提案する．
+% このようなプラットフォームを持続させる上での主な障害は参加インセンティブである：
+% 既存の先着順（FCFS）または所有者優先方式では，高性能GPU所有者が
+% 非共有時と比べてターンアラウンドタイム（TAT）が悪化し，
+% 合理的な所有者が離脱してシステム全体のカスケード崩壊を引き起こす．
+
+To address this, we introduce \emph{Preemptive Owner-Priority Scheduling}:
+when an owner submits a task, any guest task currently running on that GPU
+is immediately suspended, and the owner's task starts with zero queuing delay.
+This guarantees that the owner's TAT under ACP never exceeds the standalone TAT,
+making participation individually rational at all load levels.
+
+% この問題に対処するため，本研究では\emph{プリエンプティブ所有者優先スケジューリング}を提案する：
+% 所有者がタスクを投入すると，そのGPUで実行中のゲストタスクが即座に中断され，
+% 所有者タスクがキュー待機なしで開始される．
+% これにより，ACP下での所有者TATが単独利用時のTATを超えないことが保証され，
+% 全負荷水準で参加が個人合理的となる．
+
+We evaluate the proposed method through 100-trial discrete-event simulations
+of an 18-user, 9-tier heterogeneous GPU environment
+($\rho_\mathrm{sys} = 0.1$--$1.0$, 864,000~s per trial).
+The results show that ACP reduces TAT for low-tier users by up to $10^3\times$
+compared to No Sharing at moderate load.
+Preemptive is the \emph{only} policy that maintains
+Protection Ratio PR $\leq 1$ for Tier9 (A100) owners across all load conditions,
+whereas FCFS reaches PR $> 1$ from $\rho_\mathrm{sys} \geq 0.8$.
+Under FCFS and Owner Priority, high-tier owner withdrawal triggers a cascade
+collapse to near-zero participation within 3--4 iterations,
+while Preemptive achieves a self-sustaining full-participation equilibrium
+from any initial state.
+The PR $\leq 1$ guarantee further holds across three of four
+heterogeneous workload scenarios, demonstrating robustness to diverse
+real-world workload distributions.
+
+% 結果として，ACPは中程度の負荷において低性能層ユーザーのTATを
+% No Sharingと比べて最大$10^3$倍短縮することが示された．
+% プリエンプティブ方式は全負荷条件でTier9（A100）所有者の
+% 保護比率PR $\leq 1$を維持する唯一の方式であり，
+% FCFSは$\rho_\mathrm{sys} \geq 0.8$からPR $> 1$となる．
+% FCFSおよび所有者優先では高性能層所有者の離脱が3〜4イテレーションで
+% 参加ゼロへのカスケード崩壊を引き起こすのに対し，
+% プリエンプティブ方式は任意の初期状態から自律的な全参加平衡を達成する．
+% さらにPR $\leq 1$保証は4シナリオ中3つの不均一ワークロードシナリオで成立し，
+% 多様な実環境ワークロード分布に対する頑健性を示す．
+
+These results establish Preemptive Owner-Priority Scheduling as a practical
+mechanism for building sustainable campus GPU sharing infrastructures
+that benefit all participants without requiring external economic incentives.
+
+% これらの結果は，プリエンプティブ所有者優先スケジューリングが，
+% 外部経済インセンティブなしに全参加者に恩恵をもたらす
+% 持続可能な学内GPU共有基盤を構築するための実用的なメカニズムであることを確立する．
+
+\end{abstract}
