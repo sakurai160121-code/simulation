@@ -83,7 +83,7 @@ class SimulatorWithOwnerPreemption:
             arrivals = self.task_patterns.get("arrivals", {}).get(str(user_id), [])
             if arrivals:
                 self.schedule_event(arrivals[0], "task_arrival", user_id)
-            else:
+            elif arrival_rate > 0:
                 first_arrival = np.random.exponential(1.0 / arrival_rate)
                 self.schedule_event(first_arrival, "task_arrival", user_id)
 

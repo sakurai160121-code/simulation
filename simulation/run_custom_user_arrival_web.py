@@ -1,6 +1,6 @@
 """
-Web UI向けのユーザー別到着率シミュレーション実行スクリプト
-各ユーザー(0-17)の到着率を個別に指定して4方式を比較する。
+Web UI向けのユーザー別負荷率シミュレーション実行スクリプト
+各ユーザー(0-17)の負荷率を個別に指定し、負荷率から到着率を計算して4方式を比較する。
 """
 
 from __future__ import annotations
@@ -85,6 +85,40 @@ def parse_user_rates(value: str) -> list[float]:
     return rates
 
 
+def parse_user_load_rates(value: str) -> list[float]:
+    """ユーザー0-17用の負荷率を読み取る。"""
+    load_rates = parse_float_list(value)
+    if len(load_rates) != config.NUM_USERS:
+        raise ValueError(f"user-load-rates must have {config.NUM_USERS} values")
+    if any(rate < 0 for rate in load_rates):
+        raise ValueError("user-load-rates must be >= 0")
+    return load_rates
+
+
+def parse_user_training_ratios(value: str) -> list[float]:
+    """ユーザー0-17用の学習タスク比率を読み取る。"""
+    ratios = parse_float_list(value)
+    if len(ratios) != config.NUM_USERS:
+        raise ValueError(f"user-training-ratios must have {config.NUM_USERS} values")
+    if any((ratio < 0.0 or ratio > 1.0) for ratio in ratios):
+        raise ValueError("user-training-ratios must be in [0, 1]")
+    return ratios
+
+
+def apply_user_arrival_rates(user_rates: list[float]) -> None:
+    """ユーザー別到着率を config.ARRIVAL_RATES に反映する。"""
+    config.ARRIVAL_RATES = {str(user_id): float(user_rates[user_id]) for user_id in range(config.NUM_USERS)}
+    config.ARRIVAL_RATE = sum(user_rates) / float(config.NUM_USERS)
+
+
+def get_user_capacity(user_id: int) -> float:
+    """ユーザーuのGPU能力 C_u を返す。"""
+    for tier_name, users in config.GPU_TIER_ASSIGNMENT.items():
+        if user_id in users:
+            return float(config.GPU_PERFORMANCE_LEVELS[tier_name])
+    return 0.0
+
+
 def apply_user_arrival_rates(user_rates: list[float]) -> None:
     """ユーザー別到着率を config.ARRIVAL_RATES に反映する。"""
     config.ARRIVAL_RATES = {str(user_id): float(user_rates[user_id]) for user_id in range(config.NUM_USERS)}
@@ -100,7 +134,8 @@ def run_custom_scenario(
     simulation_time: int,
     seed: int,
     tier_rates: dict[str, float],
-    user_rates: list[float],
+    user_load_rates: list[float],
+    user_training_ratios: list[float],
     acp_resident_gpu_count: int = 0,
     acp_resident_gpu_rates: list[float] | None = None,
     inf_overhead: float = 0.2,
@@ -112,9 +147,14 @@ def run_custom_scenario(
     inference_ratio = 1.0 - training_ratio
 
     scenario_name = "custom_user_arrival_scenario"
+    avg_user_training_ratio = float(sum(user_training_ratios) / float(config.NUM_USERS))
     scenario = {
         "training_ratio": training_ratio,
         "inference_ratio": inference_ratio,
+        "user_training_ratios": {str(i): float(user_training_ratios[i]) for i in range(config.NUM_USERS)},
+        "user_inference_ratios": {str(i): float(1.0 - user_training_ratios[i]) for i in range(config.NUM_USERS)},
+        "avg_user_training_ratio": avg_user_training_ratio,
+        "avg_user_inference_ratio": 1.0 - avg_user_training_ratio,
     }
 
     config.SIMULATION_TIME = int(simulation_time)
@@ -132,6 +172,7 @@ def run_custom_scenario(
     config.INTERRUPTION_OVERHEAD_FACTOR_INFERENCE = float(inf_overhead)
     config.INTERRUPTION_OVERHEAD_FACTOR_TRAINING = float(train_overhead)
 
+    user_rates = user_load_rates  # 直接到着率として使用
     apply_user_arrival_rates(user_rates)
 
     config.RANDOM_SEED = int(seed)
@@ -202,6 +243,9 @@ def run_custom_scenario(
             "inference": float(inf_overhead),
             "training": float(train_overhead),
         },
+        "load_rates_by_user": {str(i): float(user_load_rates[i]) for i in range(config.NUM_USERS)},
+        "training_ratios_by_user": {str(i): float(user_training_ratios[i]) for i in range(config.NUM_USERS)},
+        "inference_ratios_by_user": {str(i): float(1.0 - user_training_ratios[i]) for i in range(config.NUM_USERS)},
         "arrival_rates_by_user": {str(i): float(user_rates[i]) for i in range(config.NUM_USERS)},
         "overall_results": overall_rows,
     }
@@ -229,9 +273,8 @@ def run_custom_scenario(
     user_csv_path = os.path.join(output_dir, "user_arrival_user_tat_results.csv")
     user_pivot_df.to_csv(user_csv_path, index=True, encoding="utf-8-sig")
 
-    # ユーザー0〜8の平均TATを、横軸=ユーザーID・縦軸=log10で可視化
+    # ユーザー0〜8/9〜17の平均TATを、横軸=ユーザーID・縦軸=log10で可視化
     if not user_df.empty:
-        target_users = list(range(0, 9))
         scenarios = ["No Sharing", "FCFS", "Owner Priority", "Preemptive"]
         colors = {
             "No Sharing": "#7f7f7f",
@@ -246,51 +289,55 @@ def run_custom_scenario(
             "Preemptive": "..",
         }
 
-        fig, ax = plt.subplots(figsize=(12, 6))
-        x = np.arange(len(target_users), dtype=float)
-        width = 0.18
+        def render_user_range_graph(target_users: list[int], title: str, filename: str) -> None:
+            fig, ax = plt.subplots(figsize=(12, 6))
+            x = np.arange(len(target_users), dtype=float)
+            width = 0.18
 
-        for idx, scenario_name in enumerate(scenarios):
-            values = []
-            for user_id in target_users:
-                row = user_df[(user_df["user_id"] == user_id) & (user_df["method"] == scenario_name)]
-                v = float(row.iloc[0]["avg_tat"]) if not row.empty else float("nan")
-                # log軸で表示できるよう、0以下は最小正数へ置換
-                if not np.isnan(v) and v <= 0.0:
-                    v = 1e-9
-                values.append(v)
+            for idx, scenario_name in enumerate(scenarios):
+                values = []
+                for user_id in target_users:
+                    row = user_df[(user_df["user_id"] == user_id) & (user_df["method"] == scenario_name)]
+                    v = float(row.iloc[0]["avg_tat"]) if not row.empty else float("nan")
+                    # log軸で表示できるよう、0以下は最小正数へ置換
+                    if not np.isnan(v) and v <= 0.0:
+                        v = 1e-9
+                    values.append(v)
 
-            offset = (idx - (len(scenarios) - 1) / 2.0) * width
-            ax.bar(
-                x + offset,
-                values,
-                width=width,
-                label=scenario_name,
-                color=colors[scenario_name],
-                hatch=hatches[scenario_name],
-                edgecolor="black",
-                linewidth=0.8,
-            )
+                offset = (idx - (len(scenarios) - 1) / 2.0) * width
+                ax.bar(
+                    x + offset,
+                    values,
+                    width=width,
+                    label=scenario_name,
+                    color=colors[scenario_name],
+                    hatch=hatches[scenario_name],
+                    edgecolor="black",
+                    linewidth=0.8,
+                )
 
-        ax.set_xticks(x)
-        ax.set_xticklabels([str(user_id) for user_id in target_users])
-        ax.set_xlabel("User ID")
-        ax.set_ylabel("Average TAT (log10 scale)")
-        ax.set_title("Users 0-8: Average TAT by User ID (Bar, log10)")
-        ax.set_yscale("log", base=10)
-        ax.grid(True, alpha=0.3, linestyle="--")
-        ax.legend(ncol=2, fontsize=9)
-        plt.tight_layout()
+            ax.set_xticks(x)
+            ax.set_xticklabels([str(user_id) for user_id in target_users])
+            ax.set_xlabel("User ID")
+            ax.set_ylabel("Average TAT (log10 scale)")
+            ax.set_title(title)
+            ax.set_yscale("log", base=10)
+            ax.grid(True, alpha=0.3, linestyle="--")
+            ax.legend(ncol=2, fontsize=9)
+            plt.tight_layout()
 
-        graph_path = os.path.join(output_dir, "user_0_to_8_tat_by_scenario.png")
-        plt.savefig(graph_path, dpi=300, bbox_inches="tight")
-        plt.close()
+            graph_path = os.path.join(output_dir, filename)
+            plt.savefig(graph_path, dpi=300, bbox_inches="tight")
+            plt.close()
+
+        render_user_range_graph(list(range(0, 9)), "Users 0-8: Average TAT by User ID (Bar, log10)", "user_0_to_8_tat_by_scenario.png")
+        render_user_range_graph(list(range(9, 18)), "Users 9-17: Average TAT by User ID (Bar, log10)", "user_9_to_17_tat_by_scenario.png")
 
     return os.path.abspath(output_dir)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run user-specific-arrival simulation for web UI")
+    parser = argparse.ArgumentParser(description="Run user-specific-load simulation for web UI")
     parser.add_argument("--training-ratio", type=float, required=True)
     parser.add_argument("--inference-mean", type=float, required=True)
     parser.add_argument("--inference-std", type=float, required=True)
@@ -307,7 +354,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tier7-rate", type=float, required=True)
     parser.add_argument("--tier8-rate", type=float, required=True)
     parser.add_argument("--tier9-rate", type=float, required=True)
-    parser.add_argument("--user-rates", type=str, required=True)
+    parser.add_argument("--user-load-rates", type=str, required=True)
+    parser.add_argument("--user-training-ratios", type=str, required=True)
     parser.add_argument("--acp-resident-gpu-count", type=int, required=True)
     parser.add_argument("--acp-resident-gpu-rates", type=str, required=True)
     parser.add_argument("--inf-overhead", type=float, required=True)
@@ -329,7 +377,8 @@ def main() -> None:
         "tier8": args.tier8_rate,
         "tier9": args.tier9_rate,
     }
-    user_rates = parse_user_rates(args.user_rates)
+    user_load_rates = parse_user_load_rates(args.user_load_rates)
+    user_training_ratios = parse_user_training_ratios(args.user_training_ratios)
     acp_rates = parse_float_list(args.acp_resident_gpu_rates)
 
     out = run_custom_scenario(
@@ -341,7 +390,8 @@ def main() -> None:
         simulation_time=args.simulation_time,
         seed=args.seed,
         tier_rates=tier_rates,
-        user_rates=user_rates,
+        user_load_rates=user_load_rates,
+        user_training_ratios=user_training_ratios,
         acp_resident_gpu_count=args.acp_resident_gpu_count,
         acp_resident_gpu_rates=acp_rates,
         inf_overhead=args.inf_overhead,

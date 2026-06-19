@@ -51,12 +51,26 @@ def generate_task_types(task_arrivals, scenario):
 
     training_ratio = float(scenario.get("training_ratio", 0.0))
     training_ratio = min(max(training_ratio, 0.0), 1.0)
+    user_training_ratios = scenario.get("user_training_ratios", {})
+
+    def get_user_training_ratio(user_id_str):
+        if isinstance(user_training_ratios, dict):
+            ratio = user_training_ratios.get(user_id_str, training_ratio)
+        elif isinstance(user_training_ratios, list):
+            try:
+                ratio = user_training_ratios[int(user_id_str)]
+            except (ValueError, IndexError):
+                ratio = training_ratio
+        else:
+            ratio = training_ratio
+        return min(max(float(ratio), 0.0), 1.0)
 
     task_types = {}
     for user_id_str, arrivals in task_arrivals.items():
+        user_ratio = get_user_training_ratio(user_id_str)
         task_types[user_id_str] = {}
         for arrival_time in arrivals:
-            task_type = "training" if np.random.random() < training_ratio else "inference"
+            task_type = "training" if np.random.random() < user_ratio else "inference"
             task_types[user_id_str][str(arrival_time)] = task_type
 
     return task_types
