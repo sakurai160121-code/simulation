@@ -4,7 +4,14 @@
 ランダム条件を多数生成し、4方式のシミュレーション結果を1行にまとめてCSVへ保存する。
 """
 
+
 from __future__ import annotations
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 import argparse
 from datetime import datetime
@@ -12,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from high_performance_protection_ml import build_dataset
+from simulation.analysis.high_performance_protection_ml import build_dataset
 
 
 def build_output_dir(base_dir: str) -> Path:

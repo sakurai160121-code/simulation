@@ -3,9 +3,15 @@
 各シミュレーションで同じパターンを使用するために事前に生成
 """
 
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 import numpy as np
 import json
-import config
+from simulation.core import config
 
 
 def generate_task_arrivals():

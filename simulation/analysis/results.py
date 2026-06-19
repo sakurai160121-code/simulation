@@ -2,12 +2,18 @@
 結果分析・出力
 """
 
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import List
-from definitions import Task
-from config import GPU_TIER_ASSIGNMENT, GPU_PERFORMANCE_LEVELS, SIMULATION_TIME
+from simulation.core.definitions import Task
+from simulation.core.config import GPU_TIER_ASSIGNMENT, GPU_PERFORMANCE_LEVELS, SIMULATION_TIME
 
 # 日本語フォントの設定
 plt.rcParams['font.sans-serif'] = ['Yu Gothic', 'Hiragino Sans', 'DejaVu Sans']

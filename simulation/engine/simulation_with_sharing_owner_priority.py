@@ -4,11 +4,17 @@
 タスク発生時に、自分のGPUは割り込み可能、他人のGPUは実効性能低下を考慮して選択
 """
 
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 import numpy as np
 import heapq
-import config
-from definitions import User, GPU, Task
-from config import (
+from simulation.core import config
+from simulation.core.definitions import User, GPU, Task
+from simulation.core.config import (
     NUM_USERS,
     ARRIVAL_RATE,
     SIMULATION_TIME,
@@ -18,8 +24,8 @@ from config import (
     EXPECTED_TASK_SIZE,
     get_user_expected_task_size,
 )
-from results import analyze_and_print_results
-from task_patterns import load_patterns, save_patterns
+from simulation.analysis.results import analyze_and_print_results
+from simulation.engine.task_patterns import load_patterns, save_patterns
 import os
 
 np.random.seed(RANDOM_SEED)

@@ -1,7 +1,13 @@
-﻿"""
+"""
 負荷率を到着率制御で変化させ、
 タスクシナリオ（inference/training比率）ごとに4方式を実行・可視化するスクリプト
 """
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 import os
 import sys
@@ -19,13 +25,13 @@ if sys.platform == "win32":
 plt.rcParams['font.sans-serif'] = ['Yu Gothic', 'Hiragino Sans', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-import config
-from task_patterns import save_patterns, load_patterns
-from simulation_no_sharing import Simulator as SimulatorNoSharing
-from simulation_with_sharing import SimulatorWithSharing
-from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-from results import ResultAnalyzer
+from simulation.core import config
+from simulation.engine.task_patterns import save_patterns, load_patterns
+from simulation.engine.simulation_no_sharing import Simulator as SimulatorNoSharing
+from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+from simulation.analysis.results import ResultAnalyzer
 
 # 出力ディレクトリ設定
 OUTPUT_ROOT_DIR = './outputs/multi_load'

@@ -4,7 +4,14 @@
 条件サンプリング、4方式の実行、指標集計、データセット生成に使う。
 """
 
+
 from __future__ import annotations
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,13 +20,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-import config
-from results import ResultAnalyzer
-from simulation_no_sharing import Simulator as SimulatorNoSharing
-from simulation_with_sharing import SimulatorWithSharing
-from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-from task_patterns import generate_task_arrivals, generate_task_sizes, generate_task_types
+from simulation.core import config
+from simulation.analysis.results import ResultAnalyzer
+from simulation.engine.simulation_no_sharing import Simulator as SimulatorNoSharing
+from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+from simulation.engine.task_patterns import generate_task_arrivals, generate_task_sizes, generate_task_types
 
 
 HIGH_TIER_NAMES = ["tier7", "tier8", "tier9"]

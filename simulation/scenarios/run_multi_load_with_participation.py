@@ -3,6 +3,12 @@
 負荷率と参加者数の関係をグラフ化するスクリプト
 """
 
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 import os
 import sys
 import json
@@ -16,16 +22,16 @@ import copy
 plt.rcParams['font.sans-serif'] = ['Yu Gothic', 'Hiragino Sans', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-import task_patterns
-from task_patterns import save_patterns, load_patterns
-from simulation_no_sharing import Simulator as SimulatorNoSharing
-from simulation_with_sharing import SimulatorWithSharing
-from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-from simulation_iterative_wrapper import IterativeOptimizer
-from results import ResultAnalyzer
-import config
-from config import NUM_USERS, GPU_PERFORMANCE_LEVELS, GPU_TIER_ASSIGNMENT, TASK_SIZE_MEANS, EPOCHS
+from simulation.engine import task_patterns
+from simulation.engine.task_patterns import save_patterns, load_patterns
+from simulation.engine.simulation_no_sharing import Simulator as SimulatorNoSharing
+from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+from simulation.engine.simulation_iterative_wrapper import IterativeOptimizer
+from simulation.analysis.results import ResultAnalyzer
+from simulation.core import config
+from simulation.core.config import NUM_USERS, GPU_PERFORMANCE_LEVELS, GPU_TIER_ASSIGNMENT, TASK_SIZE_MEANS, EPOCHS
 
 # 出力ディレクトリ設定
 OUTPUT_DIR = './outputs/multi_load'

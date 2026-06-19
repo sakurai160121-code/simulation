@@ -10,7 +10,14 @@ Outputs (./outputs/participation_cascade/):
   cascade_high_tier.png      High-tier participation over iterations (3 methods)
   cascade_stacked_3panel.png Stacked bar per scenario (Low/Mid/High over iterations)
 """
+
 from __future__ import annotations
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 import argparse
 import copy
@@ -19,7 +26,6 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
 import matplotlib
@@ -28,12 +34,12 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from pathlib import Path
 
-import config
-from task_patterns import save_patterns, load_patterns
-from simulation_with_sharing import SimulatorWithSharing
-from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-from simulation_iterative_wrapper import IterativeOptimizer
+from simulation.core import config
+from simulation.engine.task_patterns import save_patterns, load_patterns
+from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+from simulation.engine.simulation_iterative_wrapper import IterativeOptimizer
 
 plt.rcParams["font.sans-serif"] = ["Yu Gothic", "Hiragino Sans", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False

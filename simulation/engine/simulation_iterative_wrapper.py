@@ -3,6 +3,12 @@
 既存シミュレータクラスを参加状態に応じて呼び出す反復最適化フレームワーク
 """
 
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 import os
 import sys
 
@@ -18,8 +24,8 @@ if sys.platform == "win32":
 import numpy as np
 import heapq
 import copy
-from definitions import User, GPU, Task
-from config import (
+from simulation.core.definitions import User, GPU, Task
+from simulation.core.config import (
     NUM_USERS,
     ARRIVAL_RATE,
     ARRIVAL_RATES,
@@ -30,7 +36,7 @@ from config import (
     BATCH_SIZES,
     EPOCHS,
 )
-from task_patterns import load_patterns, save_patterns
+from simulation.engine.task_patterns import load_patterns, save_patterns
 from io import StringIO
 import matplotlib.pyplot as plt
 import matplotlib
@@ -39,10 +45,10 @@ matplotlib.rcParams['font.family'] = ['MS Gothic', 'Yu Gothic', 'Meiryo']
 matplotlib.rcParams['axes.unicode_minus'] = False
 
 # 既存のシミュレータをインポート
-from simulation_with_sharing import SimulatorWithSharing
-from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-from simulation_no_sharing import Simulator as SimulatorNoSharing
+from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+from simulation.engine.simulation_no_sharing import Simulator as SimulatorNoSharing
 
 
 class IterativeOptimizer:

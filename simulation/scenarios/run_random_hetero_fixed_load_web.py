@@ -14,7 +14,14 @@ Web UI向け: 均一到着率 + 負荷率スイープ評価
     - protection_ratio_vs_load.png
 """
 
+
 from __future__ import annotations
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 import argparse
 import math
@@ -25,13 +32,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-import config
-from results import ResultAnalyzer
-from simulation_no_sharing import Simulator as SimulatorNoSharing
-from simulation_with_sharing import SimulatorWithSharing
-from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-from plot_paper_graphs_from_csv import (
+from simulation.core import config
+from simulation.analysis.results import ResultAnalyzer
+from simulation.engine.simulation_no_sharing import Simulator as SimulatorNoSharing
+from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+from simulation.plotting.plot_paper_graphs_from_csv import (
     add_tier_tat_columns,
     plot_high_tier_tat_band,
     plot_low_tier_tat_band,
@@ -40,7 +47,7 @@ from plot_paper_graphs_from_csv import (
     plot_ratio_without_fcfs,
     plot_tier_tat_combined_band,
 )
-from task_patterns import save_patterns
+from simulation.engine.task_patterns import save_patterns
 
 plt.rcParams["font.sans-serif"] = ["Yu Gothic", "Hiragino Sans", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False

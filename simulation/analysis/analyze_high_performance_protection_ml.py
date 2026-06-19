@@ -7,7 +7,14 @@
 を学習・評価する。
 """
 
+
 from __future__ import annotations
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 import argparse
 import json
@@ -30,7 +37,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
-from high_performance_protection_ml import best_method_label_order, dataset_feature_columns
+from simulation.analysis.high_performance_protection_ml import best_method_label_order, dataset_feature_columns
 
 
 plt.rcParams['font.sans-serif'] = ['Yu Gothic', 'Hiragino Sans', 'DejaVu Sans']

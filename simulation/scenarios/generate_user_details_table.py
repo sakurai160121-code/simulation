@@ -2,6 +2,12 @@
 全ユーザー（0～17）の平均待ち時間詳細表を生成するスクリプト
 """
 
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 import sys
 import os
 import pandas as pd
@@ -19,13 +25,13 @@ if sys.platform == "win32":
 rcParams['font.sans-serif'] = ['Yu Gothic', 'Hiragino Sans', 'DejaVu Sans']
 rcParams['axes.unicode_minus'] = False
 
-from task_patterns import save_patterns, load_patterns
-from simulation_no_sharing import Simulator as SimulatorNoSharing
-from simulation_with_sharing import SimulatorWithSharing
-from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-from results import ResultAnalyzer
-from config import NUM_USERS
+from simulation.engine.task_patterns import save_patterns, load_patterns
+from simulation.engine.simulation_no_sharing import Simulator as SimulatorNoSharing
+from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+from simulation.analysis.results import ResultAnalyzer
+from simulation.core.config import NUM_USERS
 
 # 性能グループの定義
 PERFORMANCE_GROUPS = {

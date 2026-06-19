@@ -3,7 +3,14 @@ Web UI向けのカスタム負荷率シミュレーション実行スクリプ�
 推論/学習比率、タスクサイズ分布、シミュレーション時間を外部入力で受け取る。
 """
 
+
 from __future__ import annotations
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 import argparse
 import json
@@ -13,8 +20,8 @@ from datetime import datetime
 
 import pandas as pd
 
-import config
-import run_multi_load_scenarios as multi
+from simulation.core import config
+from simulation.scenarios import run_multi_load_scenarios as multi
 
 
 def linear_stats_to_lognormal_params(mean: float, std: float) -> tuple[float, float]:

@@ -5,6 +5,12 @@
 3. 反復最適化ラッパー実行
 """
 
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 import os
 import sys
 from datetime import datetime
@@ -35,7 +41,7 @@ def run_task_pattern_generation():
         print("既存のタスクパターンを削除...")
         os.remove("task_patterns.json")
     
-    from task_patterns import save_patterns
+    from simulation.engine.task_patterns import save_patterns
     print("新しいタスクパターンを生成中...")
     save_patterns()
     print("✓ タスクパターン生成完了")
@@ -60,29 +66,29 @@ def run_base_scenarios():
         print(f"\n--- {scenario_name} ---")
         
         if module_name == "simulation_no_sharing":
-            from simulation_no_sharing import Simulator
-            from task_patterns import load_patterns
+            from simulation.engine.simulation_no_sharing import Simulator
+            from simulation.engine.task_patterns import load_patterns
             patterns = load_patterns()
             sim = Simulator(task_patterns=patterns)
             tasks = sim.run()
             
         elif module_name == "simulation_with_sharing":
-            from simulation_with_sharing import SimulatorWithSharing
-            from task_patterns import load_patterns
+            from simulation.engine.simulation_with_sharing import SimulatorWithSharing
+            from simulation.engine.task_patterns import load_patterns
             patterns = load_patterns()
             sim = SimulatorWithSharing(task_patterns=patterns)
             tasks = sim.run()
             
         elif module_name == "simulation_with_sharing_owner_priority":
-            from simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
-            from task_patterns import load_patterns
+            from simulation.engine.simulation_with_sharing_owner_priority import SimulatorWithOwnerPriority
+            from simulation.engine.task_patterns import load_patterns
             patterns = load_patterns()
             sim = SimulatorWithOwnerPriority(task_patterns=patterns)
             tasks = sim.run()
             
         elif module_name == "simulation_with_sharing_owner_preemption":
-            from simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
-            from task_patterns import load_patterns
+            from simulation.engine.simulation_with_sharing_owner_preemption import SimulatorWithOwnerPreemption
+            from simulation.engine.task_patterns import load_patterns
             patterns = load_patterns()
             sim = SimulatorWithOwnerPreemption(task_patterns=patterns)
             tasks = sim.run()
@@ -119,7 +125,7 @@ def run_iterative_wrapper():
     print("【ステップ3】反復最適化ラッパー実行")
     print("="*80)
     
-    from simulation_iterative_wrapper import main as wrapper_main
+    from simulation.engine.simulation_iterative_wrapper import main as wrapper_main
     wrapper_main()
     
     print("\n✓ 反復最適化ラッパー完了")
@@ -130,8 +136,8 @@ def generate_graphs(all_tasks):
     print("【グラフ生成】")
     print("="*80)
     
-    from results import ResultAnalyzer
-    from config import NUM_USERS
+    from simulation.analysis.results import ResultAnalyzer
+    from simulation.core.config import NUM_USERS
     import matplotlib.pyplot as plt
     import pandas as pd
     

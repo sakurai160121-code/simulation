@@ -16,7 +16,7 @@ OUTPUT_DIR = SIM_DIR / "outputs"
 
 SCRIPT_CATALOG = {
     "ランダムheterogeneous固定負荷率評価": {
-        "script": "run_random_hetero_fixed_load_web.py",
+        "script": "scenarios/run_random_hetero_fixed_load_web.py",
         "summary": "到着率を全ユーザー均一に保ちつつ、全体負荷率を0.1〜1.0でスイープし、Tier8/Tier9のTATとTier9のProtection Ratioを論文用グラフとして評価します。",
         "outputs": [
             "simulation/outputs/random_hetero_fixed_load/custom_web/<timestamp>/trial_results.csv",
@@ -32,7 +32,7 @@ SCRIPT_CATALOG = {
         ],
     },
     "ユーザー別到着率で比較": {
-        "script": "run_custom_user_arrival_web.py",
+        "script": "scenarios/run_custom_user_arrival_web.py",
         "summary": "ユーザー0〜17ごとに負荷率を個別指定し、負荷率から到着率を計算して4方式の全体指標とユーザー別TATを比較します。",
         "outputs": [
             "simulation/outputs/multi_load/custom_user_arrival_web/<timestamp>/user_arrival_results.json",
@@ -527,7 +527,7 @@ with run_tab:
                 st.caption(f"出力先: {output_dir}")
 
                 if mode == "ランダムheterogeneous固定負荷率評価":
-                    paper_plot_script = "plot_paper_graphs_from_csv.py"
+                    paper_plot_script = "plotting/plot_paper_graphs_from_csv.py"
                     trial_csv = output_dir / "trial_results.csv"
                     if trial_csv.exists():
                         post_code, post_logs = run_script(

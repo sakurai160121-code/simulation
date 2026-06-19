@@ -10,23 +10,29 @@
   low_tier_tat.png      Mid_tier_tat.png      high_tier_tat.png（No Sharing 含む）
   protection_ratio.png
 """
+
 from __future__ import annotations
+
+import sys as _sys
+from pathlib import Path as _Path
+_ROOT = _Path(__file__).resolve().parents[2]
+if str(_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_ROOT))
 
 import os
 import sys
-sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
 
-import config
-from run_random_hetero_fixed_load_web import (
+from simulation.core import config
+from simulation.scenarios.run_random_hetero_fixed_load_web import (
     run_uniform_load_sweep,
     run_single_trial,
     LOAD_POINTS,
 )
-from plot_paper_graphs_from_csv import (
+from simulation.plotting.plot_paper_graphs_from_csv import (
     add_tier_tat_columns,
     _plot_tier_group_band,
     summarize_metric,
